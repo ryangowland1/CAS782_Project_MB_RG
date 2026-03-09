@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-03-09T03:24:16.433688+00:00",
-  "tick": 2910,
-  "snapshot": "data/stream/snapshots/snapshot_002910.xmi",
+  "timestamp": "2026-03-09T03:24:28.720188+00:00",
+  "tick": 2922,
+  "snapshot": "data/stream/snapshots/snapshot_002922.xmi",
   "node_count": 5,
   "edge_count": 0,
   "node_changes": {
@@ -13,35 +13,17 @@
           "node_type": "Vehicle",
           "external_id": "32",
           "x": 120.2729,
-          "y": 28.619,
+          "y": 28.6189,
           "z": 0.1313,
-          "speed": 0.0022
+          "speed": 0.0003
         },
         "after": {
           "node_type": "Vehicle",
           "external_id": "32",
-          "x": 120.2729,
-          "y": 28.6191,
+          "x": 120.273,
+          "y": 28.619,
           "z": 0.1313,
-          "speed": 0.0012
-        }
-      },
-      {
-        "before": {
-          "node_type": "Vehicle",
-          "external_id": "34",
-          "x": -70.6273,
-          "y": -61.399,
-          "z": 0.0365,
-          "speed": 0.0001
-        },
-        "after": {
-          "node_type": "Vehicle",
-          "external_id": "34",
-          "x": -70.6273,
-          "y": -61.399,
-          "z": 0.0365,
-          "speed": 0.0
+          "speed": 0.0068
         }
       }
     ]
