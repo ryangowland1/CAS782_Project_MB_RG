@@ -15,7 +15,7 @@
     .\SETUP.ps1
 
 .NOTES
-    - Requires Python 3.8+ in PATH
+    - Requires Python 3.8+ in PATH (Python 3.12 recommended for included wheel)
     - Requires PowerShell ExecutionPolicy set to RemoteSigned (see PREREQUISITES.md)
     - Run from repository root directory
 #>
@@ -30,10 +30,10 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = $scriptDir
 
 Write-Host ""
-Write-Host "╔════════════════════════════════════════════════════════════════╗"
-Write-Host "║  CAS782 Project Setup Script                                  ║"
-Write-Host "║  CARLA 0.9.16 + VIATRA Scene Graph Stream                     ║"
-Write-Host "╚════════════════════════════════════════════════════════════════╝"
+Write-Host "================================================================="
+Write-Host "  CAS782 Project Setup Script"
+Write-Host "  CARLA 0.9.16 + VIATRA Scene Graph Stream"
+Write-Host "================================================================="
 Write-Host ""
 
 # ============================================================================
@@ -50,12 +50,19 @@ function Check-Prerequisite {
     Write-Host "  Checking: $Name ... " -NoNewline
 
     try {
-        $null = & $Command 2>$null
-        Write-Host "✓" -ForegroundColor Green
-        return $true
+        $result = Invoke-Expression "$Command 2>&1"
+        if ($LASTEXITCODE -eq 0 -or $result) {
+            Write-Host "[OK]" -ForegroundColor Green
+            return $true
+        }
+        else {
+            Write-Host "[FAILED]" -ForegroundColor Red
+            Write-Host "  Error: $ErrorMsg" -ForegroundColor Yellow
+            return $false
+        }
     }
     catch {
-        Write-Host "✗ FAILED" -ForegroundColor Red
+        Write-Host "[FAILED]" -ForegroundColor Red
         Write-Host "  Error: $ErrorMsg" -ForegroundColor Yellow
         return $false
     }
@@ -70,18 +77,18 @@ function Check-File {
     Write-Host "  Checking: $Description ... " -NoNewline
 
     if (Test-Path $Path) {
-        Write-Host "✓" -ForegroundColor Green
+        Write-Host "[OK]" -ForegroundColor Green
         return $true
     }
     else {
-        Write-Host "✗ NOT FOUND" -ForegroundColor Red
+        Write-Host "[NOT FOUND]" -ForegroundColor Red
         Write-Host "  Expected: $Path" -ForegroundColor Yellow
         return $false
     }
 }
 
 Write-Host "STEP 1: Verifying Prerequisites"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "-----------------------------------------------------------------"
 
 $checks = @()
 
@@ -90,29 +97,87 @@ if (-not $SkipPythonCheck) {
         -ErrorMsg "Python not in PATH. See PREREQUISITES.md section 2.B"
 }
 
-$checks += Check-File -Path "$repoRoot\CarlaUE4.exe" -Description "CARLA binary (CarlaUE4.exe)"
 $checks += Check-File -Path "$repoRoot\PythonAPI\carla\dist\carla-0.9.16-cp312-cp312-win_amd64.whl" `
     -Description "CARLA Python wheel"
-$checks += Check-File -Path "$repoRoot\queries\SceneGraph.ecore" -Description "Metamodel (SceneGraph.ecore)"
+$checks += Check-File -Path "$repoRoot\model\SceneGraph.ecore" -Description "Metamodel (SceneGraph.ecore)"
 $checks += Check-File -Path "$repoRoot\queries\scenegraph.vql" -Description "VIATRA queries (scenegraph.vql)"
 
 if ($checks -contains $false) {
     Write-Host ""
-    Write-Host "✗ SETUP FAILED: Some prerequisites are missing." -ForegroundColor Red
+    Write-Host "[X] SETUP FAILED: Some prerequisites are missing." -ForegroundColor Red
     Write-Host "  Please follow PREREQUISITES.md before running this script." -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
-Write-Host "✓ All prerequisites found" -ForegroundColor Green
+Write-Host "[OK] All prerequisites found" -ForegroundColor Green
 Write-Host ""
 
 # ============================================================================
-# SECTION 2: Virtual Environment Setup
+# SECTION 2: Download and Install CARLA 0.9.16
 # ============================================================================
 
-Write-Host "STEP 2: Setting Up Python Virtual Environment"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "STEP 2: Installing CARLA 0.9.16"
+Write-Host "-----------------------------------------------------------------"
+
+$carlaPath = "$repoRoot\CARLA_0.9.16"
+$carlaExe = "$carlaPath\WindowsNoEditor\CarlaUE4.exe"
+
+if (Test-Path $carlaExe) {
+    Write-Host "  [OK] CARLA 0.9.16 already installed at: $carlaPath" -ForegroundColor Green
+}
+else {
+    Write-Host "  Downloading CARLA 0.9.16 (this may take several minutes)..."
+    Write-Host "  Download size: ~8GB | Extracted size: ~20GB"
+    Write-Host ""
+    
+    $carlaUrl = "https://carla-releases.s3.us-east-005.backblazeb2.com/Windows/CARLA_0.9.16.zip"
+    $carlaZip = "$repoRoot\CARLA_0.9.16.zip"
+    
+    try {
+        # Download CARLA
+        Write-Host "  Downloading from: $carlaUrl" -ForegroundColor Cyan
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $carlaUrl -OutFile $carlaZip -UseBasicParsing
+        $ProgressPreference = 'Continue'
+        Write-Host "  [OK] Download complete" -ForegroundColor Green
+        
+        # Extract CARLA
+        Write-Host "  Extracting CARLA (this may take several minutes)..." -ForegroundColor Cyan
+        Expand-Archive -Path $carlaZip -DestinationPath $carlaPath -Force
+        Write-Host "  [OK] Extraction complete" -ForegroundColor Green
+        
+        # Clean up zip file
+        Write-Host "  Cleaning up download file..." -NoNewline
+        Remove-Item $carlaZip -Force
+        Write-Host " [OK]" -ForegroundColor Green
+        
+        # Verify installation
+        if (Test-Path $carlaExe) {
+            Write-Host "  [OK] CARLA installed successfully at: $carlaPath" -ForegroundColor Green
+        }
+        else {
+            Write-Host "  [X] CARLA installation verification failed" -ForegroundColor Red
+            Write-Host "  Expected executable at: $carlaExe" -ForegroundColor Yellow
+            exit 1
+        }
+    }
+    catch {
+        Write-Host "  [X] FAILED to download/install CARLA" -ForegroundColor Red
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  You can manually download from: $carlaUrl" -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+Write-Host ""
+
+# ============================================================================
+# SECTION 3: Virtual Environment Setup
+# ============================================================================
+
+Write-Host "STEP 3: Setting Up Python Virtual Environment"
+Write-Host "-----------------------------------------------------------------"
 
 $venvPath = Join-Path $repoRoot ".venv"
 
@@ -126,7 +191,7 @@ if (Test-Path $venvPath) {
         else {
             Write-Host "  Removing old venv ... " -NoNewline
             Remove-Item -Recurse -Force $venvPath | Out-Null
-            Write-Host "✓" -ForegroundColor Green
+            Write-Host "[OK]" -ForegroundColor Green
             python -m venv $venvPath
         }
     }
@@ -135,31 +200,31 @@ else {
     Write-Host "  Creating virtual environment at: $venvPath"
     python -m venv $venvPath
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "✗ FAILED to create venv" -ForegroundColor Red
+        Write-Host "[X] FAILED to create venv" -ForegroundColor Red
         exit 1
     }
-    Write-Host "  ✓ Virtual environment created" -ForegroundColor Green
+    Write-Host "  [OK] Virtual environment created" -ForegroundColor Green
 }
 
 # Activate venv
 $activateScript = Join-Path $venvPath "Scripts\Activate.ps1"
 if (-not (Test-Path $activateScript)) {
-    Write-Host "✗ FAILED: Cannot find activation script" -ForegroundColor Red
+    Write-Host "[X] FAILED: Cannot find activation script" -ForegroundColor Red
     exit 1
 }
 
 Write-Host "  Activating virtual environment ... " -NoNewline
 & $activateScript
-Write-Host "✓" -ForegroundColor Green
+Write-Host "[OK]" -ForegroundColor Green
 
 Write-Host ""
 
 # ============================================================================
-# SECTION 3: Install CARLA Python API
+# SECTION 4: Install CARLA Python API
 # ============================================================================
 
-Write-Host "STEP 3: Installing CARLA Python API"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "STEP 4: Installing CARLA Python API"
+Write-Host "-----------------------------------------------------------------"
 
 $wheelPath = Join-Path $repoRoot "PythonAPI\carla\dist\carla-0.9.16-cp312-cp312-win_amd64.whl"
 
@@ -169,15 +234,15 @@ Write-Host ""
 
 python -m pip install --upgrade pip --quiet 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "⚠ Warning: pip upgrade had issues (continuing)" -ForegroundColor Yellow
+    Write-Host "  [WARNING] pip upgrade had issues (continuing)" -ForegroundColor Yellow
 }
 
 python -m pip install "$wheelPath" --quiet
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ CARLA wheel installed successfully" -ForegroundColor Green
+    Write-Host "  [OK] CARLA wheel installed successfully" -ForegroundColor Green
 }
 else {
-    Write-Host "✗ FAILED to install CARLA wheel" -ForegroundColor Red
+    Write-Host "[X] FAILED to install CARLA wheel" -ForegroundColor Red
     Write-Host "  Try running: python -m pip install '$wheelPath'" -ForegroundColor Yellow
     exit 1
 }
@@ -185,16 +250,16 @@ else {
 Write-Host ""
 
 # ============================================================================
-# SECTION 4: Verify CARLA Import
+# SECTION 5: Verify CARLA Import
 # ============================================================================
 
-Write-Host "STEP 4: Verifying CARLA Module"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "STEP 5: Verifying CARLA Module"
+Write-Host "-----------------------------------------------------------------"
 
 $testScript = @"
 try:
     import carla
-    print(f'CARLA version: {carla.__version__}')
+    print('CARLA module import OK')
     print('SUCCESS')
 except Exception as e:
     print(f'ERROR: {e}')
@@ -203,11 +268,14 @@ except Exception as e:
 $output = python -c $testScript
 
 if ($output -match "SUCCESS") {
-    Write-Host "  ✓ CARLA module imports successfully" -ForegroundColor Green
-    Write-Host "  Version: $($output -match 'CARLA version: \d+\.\d+\.\d+' | ForEach-Object { $_ })"
+    Write-Host "  [OK] CARLA module imports successfully" -ForegroundColor Green
+    $versionLine = $output | Select-String "CARLA module"
+    if ($versionLine) {
+        Write-Host "  $versionLine"
+    }
 }
 else {
-    Write-Host "✗ FAILED to import CARLA module" -ForegroundColor Red
+    Write-Host "[X] FAILED to import CARLA module" -ForegroundColor Red
     Write-Host "  Output: $output" -ForegroundColor Yellow
     exit 1
 }
@@ -215,11 +283,11 @@ else {
 Write-Host ""
 
 # ============================================================================
-# SECTION 5: Verify Directory Structure
+# SECTION 6: Verify Directory Structure
 # ============================================================================
 
-Write-Host "STEP 5: Verifying Directory Structure"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "STEP 6: Verifying Directory Structure"
+Write-Host "-----------------------------------------------------------------"
 
 $requiredDirs = @(
     "data",
@@ -228,6 +296,7 @@ $requiredDirs = @(
     "src",
     "scripts",
     "queries",
+    "model",
     "PythonAPI",
     "logs"
 )
@@ -237,10 +306,10 @@ $missingDirs = @()
 foreach ($dir in $requiredDirs) {
     $fullPath = Join-Path $repoRoot $dir
     if (Test-Path $fullPath) {
-        Write-Host "  ✓ $dir" -ForegroundColor Green
+        Write-Host "  [OK] $dir" -ForegroundColor Green
     }
     else {
-        Write-Host "  ✗ $dir (MISSING - creating)" -ForegroundColor Yellow
+        Write-Host "  [X] $dir (MISSING - creating)" -ForegroundColor Yellow
         New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
         $missingDirs += $dir
     }
@@ -253,38 +322,38 @@ if ($missingDirs.Count -gt 0) {
 Write-Host ""
 
 # ============================================================================
-# SECTION 6: Summary & Next Steps
+# SECTION 7: Summary & Next Steps
 # ============================================================================
 
-Write-Host "STEP 6: Setup Summary"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "STEP 7: Setup Summary"
+Write-Host "-----------------------------------------------------------------"
 Write-Host ""
-Write-Host "✓ SETUP COMPLETE!" -ForegroundColor Green
+Write-Host "[OK] SETUP COMPLETE!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Summary:"
-Write-Host "  • Python virtual environment: $venvPath"
-Write-Host "  • CARLA API: Installed (v0.9.16)"
-Write-Host "  • Metamodel: $repoRoot\queries\SceneGraph.ecore"
-Write-Host "  • VIATRA Queries: $repoRoot\queries\scenegraph.vql"
-Write-Host "  • CARLA Binary: $repoRoot\CarlaUE4.exe"
+Write-Host "  * Python virtual environment: $venvPath"
+Write-Host "  * CARLA API: Installed (v0.9.16)"
+Write-Host "  * CARLA Server: $carlaPath\WindowsNoEditor"
+Write-Host "  * Metamodel: $repoRoot\model\SceneGraph.ecore"
+Write-Host "  * VIATRA Queries: $repoRoot\queries\scenegraph.vql"
 Write-Host ""
 
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "================================================================="
 Write-Host "NEXT STEPS:"
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "================================================================="
 Write-Host ""
 Write-Host "1. ACTIVATE VIRTUAL ENVIRONMENT (in each new terminal):"
 Write-Host ""
 Write-Host "   .\.venv\Scripts\Activate.ps1"
 Write-Host ""
 
-Write-Host "2. VERIFY CARLA SERVER:"
+Write-Host "2. START CARLA SERVER:"
 Write-Host ""
-Write-Host "   .\CarlaUE4.exe -quality-level=Low -windowed 2>/dev/null &"
+Write-Host "   .\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed"
 Write-Host "   (Server will listen on 127.0.0.1:2000 by default)"
 Write-Host ""
 
-Write-Host "3. RUN A DEMO (in a new terminal with .venv activated):"
+Write-Host "3. TEST WITH MOCK MODE (alternative to CARLA server):"
 Write-Host ""
 Write-Host "   python .\src\carla_scenegraph_export.py --mock --output .\data\demo.xmi"
 Write-Host ""
@@ -301,7 +370,7 @@ Write-Host "   See STREAM_REFERENCE.md for stream file locations"
 Write-Host "   See VIATRA_STREAM_GUIDE.md for Eclipse integration"
 Write-Host ""
 
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Host "================================================================="
 Write-Host ""
 Write-Host "Questions? See PREREQUISITES.md or contact your instructor."
 Write-Host ""

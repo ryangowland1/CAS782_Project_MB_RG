@@ -1,0 +1,82 @@
+# CARLA Installation (Large Files - ~20GB)
+CARLA_0.9.16/
+CARLA_0.9.16.zip
+
+# Python Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache and Build Files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Data Streams and Simulation Outputs
+data/stream/events.jsonl
+data/stream/latest_snapshot.xmi
+data/stream/snapshots/
+data/stream/live_view.html
+
+# Temporary Files
+*.tmp
+*.temp
+.tmp/
+temp/
+*.backup
+*.bak
+SETUP.ps1.*
+
+# OS-Specific Files
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Test and Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Eclipse/VIATRA Working Files
+.metadata/
+.project
+.pydevproject

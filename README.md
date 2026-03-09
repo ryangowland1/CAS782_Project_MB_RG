@@ -9,7 +9,7 @@ Final project repository for CAS782 (Digital Twins), focused on a CARLA-driven s
 ### Step 1: Read Prerequisites
 Before starting, review all system requirements:
 
-📄 **[PREREQUISITES.md](PREREQUISITES.md)** (5-10 minutes to read)
+**[PREREQUISITES.md](PREREQUISITES.md)** (5-10 minutes to read)
 - System requirements (Windows 10/11, disk space, GPU)
 - Required software (Git, Python 3.8+, Visual C++ Build Tools)
 - One-time setup checklist
@@ -21,6 +21,8 @@ Once prerequisites are met, run the automated setup:
 ```powershell
 .\SETUP.ps1
 ```
+
+**Note:** This will download CARLA 0.9.16 (~8GB) and may take 10-30 minutes depending on your internet connection.
 
 
 ### Step 3: Follow Printed Instructions
@@ -63,7 +65,7 @@ Once setup is complete, explore these guides:
 - `src/viatra_dummy_live_consumer.py` — Demo: consume live event stream
 
 **Metamodel & Queries:**
-- `queries/SceneGraph.ecore` — EMF metamodel (Vehicle, Pedestrian, Node, Edge)
+- `model/SceneGraph.ecore` — EMF metamodel (Vehicle, Pedestrian, Node, Edge)
 - `queries/scenegraph.vql` — VIATRA query patterns (fastVehicle, connected, etc.)
 
 **Scale Simulation & Utilities:**

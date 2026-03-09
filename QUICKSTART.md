@@ -1,15 +1,19 @@
 # CARLA + VIATRA Quick Start Guide
 
-## ✅ Prerequisites Check
+## Prerequisites Check
 
-- [x] CARLA Python API installed (version 0.9.16)
-- [x] Scene graph export scripts ready
-- [x] Metamodel defined (SceneGraph.ecore)
-- [x] VIATRA queries ready (scenegraph.vql)
+- [x] Python 3.12 installed (see PREREQUISITES.md)
+- [x] SETUP.ps1 has been run successfully
+- [x] CARLA 0.9.16 downloaded by setup
 
-## 🚀 Part 1: CARLA Scene Graph Export
+### Recommended First Steps for New Users
 
-### Option A: Mock Mode (No CARLA Server Required)
+**Option 1:** Start with live CARLA simulation (installed during setup)
+**Option 2:** Use mock mode for quick testing without starting the CARLA server
+
+## Part 1: CARLA Scene Graph Export
+
+### Option A: Mock Mode (Quick Testing)
 
 ```powershell
 # Generate a test scene graph
@@ -22,16 +26,10 @@
 
 #### Step 1: Start CARLA Server
 
-Open a **new terminal** and run:
+Open a **new terminal** and run from the project root:
 
 ```powershell
-cd C:\carla-src\carla
-make launch
-```
-
-Or directly run the executable:
-```powershell
-C:\carla-src\carla\Unreal\CarlaUE4\Binaries\Win64\CarlaUE4-Win64-Shipping.exe
+.\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed
 ```
 
 Wait for CARLA window to fully load (you'll see the main menu or simulation view).
@@ -63,7 +61,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
 
 Opens `data/stream/live_view.html` in your browser showing real-time graph updates.
 
-## 🔍 Part 2: VIATRA Query Analysis
+## Part 2: VIATRA Query Analysis
 
 ### Setup Eclipse + VIATRA
 
@@ -88,7 +86,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 
 2. **Import Ecore**
    - Right-click project → `Import` → `General` → `File System`
-   - Browse to: `C:\Users\Ryan\Documents\McMaster MASc\2025-26\Classes\CAS782\Final Project\CAS782_Project_MB_RG\model`
+   - Browse to: `CAS782_Project_MB_RG\model`
    - Select `SceneGraph.ecore`
    - Click `Finish`
 
@@ -100,7 +98,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 
 1. **Import XMI File**
    - Right-click project → `Import` → `General` → `File System`
-   - Browse to: `C:\Users\Ryan\Documents\McMaster MASc\2025-26\Classes\CAS782\Final Project\CAS782_Project_MB_RG\data`
+   - Browse to: `\CAS782_Project_MB_RG\data`
    - Select `scene_mock.xmi` (or `scene_live.xmi`)
    - Click `Finish`
 
@@ -127,7 +125,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 
 2. **Import Queries**
    - Right-click `src` folder → `Import` → `General` → `File System`
-   - Browse to: `C:\Users\Ryan\Documents\McMaster MASc\2025-26\Classes\CAS782\Final Project\CAS782_Project_MB_RG\queries`
+   - Browse to: `CAS782_Project_MB_RG\queries`
    - Select `scenegraph.vql`
    - Click `Finish`
 
@@ -157,7 +155,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - `connected`: 6 matches (3 edges × 2 directions)
    - `vehiclePedestrianSharedRoad`: 0 matches (no road segments in mock data)
 
-## 📊 Example Workflow
+## Example Workflow
 
 ### Complete Mock Example
 
@@ -175,8 +173,7 @@ Get-Content .\data\demo.xmi
 
 ```powershell
 # Terminal 1: Start CARLA
-cd C:\carla-src\carla
-make launch
+.\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed
 
 # Terminal 2 (this project): Generate scene graph
 .\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --output .\data\live.xmi
@@ -189,8 +186,7 @@ make launch
 
 ```powershell
 # Terminal 1: Start CARLA (if using real mode)
-cd C:\carla-src\carla
-make launch
+.\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed
 
 # Terminal 2: Start streaming bridge
 powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Interval 1.0
@@ -201,7 +197,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
 # For VIATRA: Configure incremental query engine to watch data/stream/*.xmi files
 ```
 
-## 🎯 Next Steps
+## Next Steps
 
 1. **Add More Actors to CARLA**
    - Spawn vehicles and pedestrians in CARLA
@@ -218,7 +214,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
    - Create model-to-model transformations
    - Example: Generate warning events for detected conflicts
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### CARLA Connection Issues
 ```powershell
@@ -235,18 +231,18 @@ powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
 - CARLA world may have no actors
 - In CARLA, use `examples/spawn_npc.py` to add actors:
 ```powershell
-cd C:\carla-src\carla
-python PythonAPI\examples\spawn_npc.py -n 20 -w 10
+# From your project directory
+.\.venv\Scripts\python.exe .\CARLA_0.9.16\PythonAPI\examples\spawn_npc.py -n 20 -w 10
 ```
 
-## 📚 Documentation
+## Documentation
 
 - `docs/windows_setup_carla_viatra.md` - Detailed setup instructions
 - `docs/architecture.md` - System architecture and data flow
 - `docs/extractor_usage.md` - Scene graph export details
 - `docs/viatra_stream_integration.md` - Streaming integration
 
-## ✅ Verification Checklist
+## Verification Checklist
 
 - [ ] CARLA Python module imports successfully
 - [ ] Mock scene graph generates correctly

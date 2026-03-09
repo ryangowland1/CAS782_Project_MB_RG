@@ -2,7 +2,8 @@
 
 Before running the setup script (`SETUP.ps1`), you must complete the prerequisites below. These are **manual, one-time** setup steps required for your system.
 
-## ⚠️ Prerequisites (Do These First)
+
+## Prerequisites (Do These First)
 
 ### 1. Operating System
 - **Windows 10 or Windows 11** (64-bit)
@@ -48,13 +49,16 @@ Required for building Python packages from source.
 python -c "import setuptools; print('C++ build tools OK')"
 ```
 
-### 3. CARLA Server Binary (Prebuilt)
+### 3. Disk Space for CARLA
 
-This repo includes **prebuilt CARLA 0.9.16 binaries**. They are provided in the repo root:
-- `CarlaUE4.exe` — The Unreal Engine server executable
-- `CarlaUE4/` — Supporting binaries and libraries
+The SETUP.ps1 script will automatically download and install CARLA 0.9.16.
 
-**No build required** — the setup script will verify these exist.
+**Required disk space:**
+- Download size: ~8GB
+- Extracted size: ~20GB
+- Total temporary space needed: ~28GB (during installation)
+
+**Note:** CARLA will be installed to `<repo>\CARLA_0.9.16\` automatically during setup. The download is handled by the setup script and requires a stable internet connection.
 
 ### 4. PowerShell Execution Policy
 
@@ -75,22 +79,22 @@ Get-ExecutionPolicy -Scope CurrentUser
 
 ---
 
-## ✅ Checklist Before Running SETUP.ps1
+## Checklist Before Running SETUP.ps1
 
 Before you run the setup script, verify all of these:
 
 - [ ] Windows 10/11 (64-bit)
 - [ ] `git --version` works in PowerShell
-- [ ] `python --version` works and is 3.8+
+- [ ] `python --version` works and is 3.12.x (for included CARLA wheel)
 - [ ] `pip --version` works
 - [ ] C++ Build Tools or Visual Studio 2022 installed
 - [ ] PowerShell ExecutionPolicy set to `RemoteSigned` (run as admin)
-- [ ] `CarlaUE4.exe` exists in repo root
-- [ ] At least 10 GB free disk space
+- [ ] At least 30 GB free disk space (for CARLA installation)
+- [ ] Stable internet connection (for CARLA download)
 
 ---
 
-## 🚀 Next Steps
+## Next Steps
 
 Once all prerequisites are complete:
 
@@ -105,15 +109,18 @@ Once all prerequisites are complete:
    ```
 
 The script will:
+- Download and install CARLA 0.9.16 (~8GB download, ~20GB extracted)
 - Create Python virtual environment (`.venv/`)
 - Install CARLA Python API from the included wheel
 - Verify directory structure
 - Create necessary data directories
 - Validate all components
 
+**Note:** The CARLA download may take 10-30 minutes depending on your internet speed.
+
 ---
 
-## ❓ Troubleshooting Prerequisites
+## Troubleshooting Prerequisites
 
 ### "Python not found"
 - Reinstall Python 3.10+ from https://www.python.org/downloads/
@@ -128,9 +135,11 @@ The script will:
 - Install C++ Build Tools: https://visualstudio.microsoft.com/downloads/
 - Or install full Visual Studio 2022 with "Desktop development with C++"
 
-### "CarlaUE4.exe not found"
-- The repo root should contain `CarlaUE4.exe` and `CarlaUE4/` folder
-- If missing, contact your instructor or check git-lfs (if used)
+### "CARLA download failed"
+- Check your internet connection
+- Ensure you have at least 30GB free disk space
+- The setup script will attempt to download from: https://carla-releases.s3.us-east-005.backblazeb2.com/Windows/CARLA_0.9.16.zip
+- If download repeatedly fails, you can manually download and extract to `<repo>\CARLA_0.9.16\`
 
 ### Port 2000/2001 blocked
 - CARLA uses ports 2000-2001 by default
@@ -139,7 +148,7 @@ The script will:
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
 - **CARLA Docs:** https://carla.readthedocs.io/
 - **VIATRA Docs:** https://wiki.eclipse.org/VIATRA
