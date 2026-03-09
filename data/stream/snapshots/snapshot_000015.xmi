@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<scenegraph:Scene xmlns:scenegraph="http://cas782/scenegraph" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmi:version="2.0" name="CARLA_Stream">
+  <nodes xsi:type="scenegraph:Vehicle" id="33" x="-48.829250" y="-8.584871" z="-0.002299" speed="0.000058" />
+  <nodes xsi:type="scenegraph:Vehicle" id="34" x="-70.627296" y="-61.399040" z="0.036457" speed="0.000096" />
+  <nodes xsi:type="scenegraph:Vehicle" id="27" x="109.789886" y="11.257276" z="0.002945" speed="9.284549" />
+  <nodes xsi:type="scenegraph:Vehicle" id="26" x="-64.644646" y="24.470968" z="-0.007454" speed="0.000000" />
+  <nodes xsi:type="scenegraph:Vehicle" id="28" x="-70.694298" y="24.485376" z="-0.018845" speed="0.000114" />
+  <nodes xsi:type="scenegraph:Vehicle" id="29" x="22.783945" y="16.747728" z="0.034120" speed="6.909621" />
+  <nodes xsi:type="scenegraph:Vehicle" id="30" x="-63.094727" y="28.206034" z="-0.004643" speed="6.482721" />
+  <nodes xsi:type="scenegraph:Vehicle" id="31" x="-107.484039" y="72.376839" z="-0.002288" speed="7.266118" />
+  <nodes xsi:type="scenegraph:Vehicle" id="32" x="-77.738434" y="27.961107" z="-0.005356" speed="4.641103" />
+  <edges type="proximity" source="//@nodes.3" target="//@nodes.4" />
+  <edges type="proximity" source="//@nodes.3" target="//@nodes.6" />
+  <edges type="proximity" source="//@nodes.4" target="//@nodes.6" />
+  <edges type="proximity" source="//@nodes.4" target="//@nodes.8" />
+</scenegraph:Scene>

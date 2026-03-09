@@ -1,0 +1,22 @@
+package cas782.scenegraph
+
+import "http://cas782/scenegraph"
+
+// Vehicles moving faster than threshold.
+pattern fastVehicle(v: Vehicle) {
+    Vehicle.speed(v, s);
+    check(s > 13.9); // 50 km/h approx in m/s
+}
+
+// Generic edge match between two nodes.
+pattern connected(source: Node, target: Node) {
+    Edge.source(e, source);
+    Edge.target(e, target);
+}
+
+// Example potential conflict: vehicle and pedestrian both connected to same road segment.
+pattern vehiclePedestrianSharedRoad(v: Vehicle, p: Pedestrian, r: RoadSegment) {
+    connected(v, r);
+    connected(p, r);
+    v != p;
+}
