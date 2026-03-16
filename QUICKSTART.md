@@ -63,19 +63,25 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 
 ## Part 2: VIATRA Query Analysis
 
-### Setup Eclipse + VIATRA
+### Setup JDK + Eclipse + XTend + VIATRA
 
-1. **Download Eclipse Modeling Tools**
-   - Go to https://www.eclipse.org/downloads/packages/
+1. **Download JDK**
+   - Go to https://www.oracle.com/ca-en/java/technologies/downloads
+   - Download the latest version of JDK
+
+2. **Download Eclipse Modeling Tools**
+   - Go to https://www.eclipse.org/downloads/packages/release/2025-06/r
    - Download "Eclipse Modeling Tools"
+   - Note that this is version 2025-06 rather than the latest version
 
-2. **Install VIATRA Plugin**
-   - In Eclipse: `Help` → `Install New Software`
-   - Click `Add...`
-   - Name: `VIATRA`
-   - Location: `http://download.eclipse.org/viatra/updates/release/latest`
-   - Select: `VIATRA Query and Transformation SDK`
-   - Click `Next` and complete installation
+3. **Install Xtend Plugin**
+   - In Eclipse: `Help` → `Eclipse Marketplace`
+   - Search for and install Xtend
+   - Restart Eclipse
+
+4. **Install VIATRA Plugin**
+   - In Eclipse: `Help` → `Eclipse Marketplace`
+   - Search for and install VIATRA
    - Restart Eclipse
 
 ### Import Scene Graph Metamodel
@@ -85,7 +91,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Name: `SceneGraphModel`
 
 2. **Import Ecore**
-   - Right-click project → `Import` → `General` → `File System`
+   - Right-click 'SceneGraphModel' → `Import` → `General` → `File System`
    - Browse to: `CAS782_Project_MB_RG\model`
    - Select `SceneGraph.ecore`
    - Click `Finish`
@@ -97,7 +103,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 ### Import Scene Graph Instance
 
 1. **Import XMI File**
-   - Right-click project → `Import` → `General` → `File System`
+   - Right-click 'SceneGraphModel' → `Import` → `General` → `File System`
    - Browse to: `\CAS782_Project_MB_RG\data`
    - Select `scene_mock.xmi` (or `scene_live.xmi`)
    - Click `Finish`
