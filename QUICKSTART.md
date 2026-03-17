@@ -91,14 +91,10 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Name: `SceneGraphModel`
 
 2. **Import Ecore**
-   - Right-click 'SceneGraphModel' → `Import` → `General` → `File System`
-   - Browse to: `CAS782_Project_MB_RG\model`
-   - Select `SceneGraph.ecore`
-   - Click `Finish`
-
-3. **Register EPackage**
-   - Right-click `SceneGraph.ecore` → `Register EPackages`
-   - This makes the metamodel available to VIATRA
+   - Go to `model\SceneGraphModel.ecore`
+   - Right click -> `Open With` → `Plain Text Editor`
+   - Replace with the contents of `\CAS782_Project_MB_RG\model\SceneGraph.ecore`
+   - Save the file
 
 ### Import Scene Graph Instance
 
@@ -108,7 +104,11 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Select `scene_mock.xmi` (or `scene_live.xmi`)
    - Click `Finish`
 
-2. **Open in Sample Reflective Ecore Model Editor**
+2. **Generate Scene Graph Code**
+   - In Eclipse, open up '\model\sceneGraphModel.ecore'
+   - Right-click 'SceneGraphModel' (in the sceneGraphModel.genmodel window, not in the Model Explorer window) → `Generate Model Code`
+
+3. **Open in Sample Reflective Ecore Model Editor**
    - Right-click the XMI file → `Open With` → `Sample Reflective Ecore Model Editor`
    - You should see the scene hierarchy:
      ```
