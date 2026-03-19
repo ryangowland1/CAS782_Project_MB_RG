@@ -1,0 +1,32 @@
+@namespace(uri="psl", prefix="")
+package psl;
+
+class Project {
+	attr String name;
+	attr String description;
+	val Task[*] tasks;
+	@diagram(direction="right")
+	val Person[*] people;
+}
+
+@node(label="name")
+class Task {
+	attr String name;
+	attr int start;
+	attr int duration;
+	@diagram(direction="right")
+	val Effort[*]#task effort;
+}
+
+@node(label="name")
+class Person {
+	attr String name;
+}
+
+@edge(source="person", target="task", label="eol: self.percentage + '%'")
+class Effort {
+    @diagram(direction="up")
+	ref Person person;
+	ref Task#effort task;
+	attr int percentage = 100;
+}
