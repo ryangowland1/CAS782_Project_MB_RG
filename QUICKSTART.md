@@ -130,12 +130,21 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Name: `SceneGraphQueries`
 
 2. **Import Queries**
-   - Right-click `src` folder → `Import` → `General` → `File System`
+   - `File` → `New` → `Other` → `Java` → `Package`
+   - Name: `queries` 
+   - Place it in the `src` folder
+   - Right-click `queries` package → `Import` → `General` → `File System`
    - Browse to: `CAS782_Project_MB_RG\queries`
    - Select `scenegraph.vql`
    - Click `Finish`
-
-3. **Review Available Patterns**
+  
+3. **Fix Manifest**
+   - In the new project, open up `META-INF\MANIFEST.mf`
+   - In export-packages, export `queries`
+   - Create a Require-Bundle key and give it the value `SceneGraphModel`
+   - Delete javax.annotations from the manifest
+  
+4. **Review Available Patterns**
    - Open `scenegraph.vql`
    - You'll see three patterns:
      - `fastVehicle` - Finds vehicles moving faster than 50 km/h
@@ -143,17 +152,15 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
      - `vehiclePedestrianSharedRoad` - Potential vehicle/pedestrian conflicts
 
 ### Execute Queries
-
-1. **Load Model into Query Explorer**
-   - Right-click the XMI file → `VIATRA` → `Load model to Query Explorer`
    
-2. **Open Query Explorer**
-   - `Window` → `Show View` → `Other` → `VIATRA` → `Query Explorer`
-
-3. **Run Patterns**
-   - In Query Explorer, you'll see your patterns listed
-   - Check the checkboxes next to patterns you want to execute
-   - View results in the `Query Explorer` view
+1. **Open Query Registry**
+   - `Window` → `Show View` → `Other` → `VIATRA` → `Query Registry`
+  
+2. **Load Model into Query Registry**
+   - Open up the xmi file → top-right corner of the Query Registry → there should be a green play button
+  
+3. **Load Queries into Query Registry**
+   - Open up the vql file → top-right corner of the Query Registry → there should be a green play button
    
 4. **Example Results**
    For `scene_mock.xmi`:
