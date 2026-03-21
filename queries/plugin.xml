@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?><plugin>
+  <extension id="queryrunner" point="org.eclipse.core.runtime.applications">
+    <application>
+      <run class="apiqueries.QueryRunner"></run>
+	</application>
+  </extension>
+</plugin>

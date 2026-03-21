@@ -32,7 +32,7 @@ $repoRoot = $scriptDir
 Write-Host ""
 Write-Host "================================================================="
 Write-Host "  CAS782 Project Setup Script"
-Write-Host "  CARLA 0.9.16 + VIATRA Scene Graph Stream"
+Write-Host "  CARLA 0.9.14 + VIATRA Scene Graph Stream"
 Write-Host "================================================================="
 Write-Host ""
 
@@ -97,8 +97,6 @@ if (-not $SkipPythonCheck) {
         -ErrorMsg "Python not in PATH. See PREREQUISITES.md section 2.B"
 }
 
-$checks += Check-File -Path "$repoRoot\PythonAPI\carla\dist\carla-0.9.16-cp312-cp312-win_amd64.whl" `
-    -Description "CARLA Python wheel"
 $checks += Check-File -Path "$repoRoot\model\SceneGraph.ecore" -Description "Metamodel (SceneGraph.ecore)"
 $checks += Check-File -Path "$repoRoot\queries\scenegraph.vql" -Description "VIATRA queries (scenegraph.vql)"
 
@@ -114,25 +112,25 @@ Write-Host "[OK] All prerequisites found" -ForegroundColor Green
 Write-Host ""
 
 # ============================================================================
-# SECTION 2: Download and Install CARLA 0.9.16
+# SECTION 2: Download and Install CARLA 0.9.14
 # ============================================================================
 
-Write-Host "STEP 2: Installing CARLA 0.9.16"
+Write-Host "STEP 2: Installing CARLA 0.9.14"
 Write-Host "-----------------------------------------------------------------"
 
-$carlaPath = "$repoRoot\CARLA_0.9.16"
+$carlaPath = "$repoRoot\CARLA_0.9.14"
 $carlaExe = "$carlaPath\WindowsNoEditor\CarlaUE4.exe"
 
 if (Test-Path $carlaExe) {
-    Write-Host "  [OK] CARLA 0.9.16 already installed at: $carlaPath" -ForegroundColor Green
+    Write-Host "  [OK] CARLA 0.9.14 already installed at: $carlaPath" -ForegroundColor Green
 }
 else {
-    Write-Host "  Downloading CARLA 0.9.16 (this may take several minutes)..."
+    Write-Host "  Downloading CARLA 0.9.14 (this may take several minutes)..."
     Write-Host "  Download size: ~8GB | Extracted size: ~20GB"
     Write-Host ""
     
-    $carlaUrl = "https://carla-releases.s3.us-east-005.backblazeb2.com/Windows/CARLA_0.9.16.zip"
-    $carlaZip = "$repoRoot\CARLA_0.9.16.zip"
+    $carlaUrl = "https://carla-releases.s3.us-east-005.backblazeb2.com/Windows/CARLA_0.9.14.zip"
+    $carlaZip = "$repoRoot\CARLA_0.9.14.zip"
     
     try {
         # Download CARLA
@@ -226,9 +224,9 @@ Write-Host ""
 Write-Host "STEP 4: Installing CARLA Python API"
 Write-Host "-----------------------------------------------------------------"
 
-$wheelPath = Join-Path $repoRoot "PythonAPI\carla\dist\carla-0.9.16-cp312-cp312-win_amd64.whl"
+$wheelPath = Join-Path $repoRoot "PythonAPI\carla\dist\carla-0.9.14-cp312-cp312-win_amd64.whl"
 
-Write-Host "  Installing: carla-0.9.16-cp312-cp312-win_amd64.whl"
+Write-Host "  Installing: carla-0.9.14-cp312-cp312-win_amd64.whl"
 Write-Host "  From: $wheelPath"
 Write-Host ""
 
@@ -332,7 +330,7 @@ Write-Host "[OK] SETUP COMPLETE!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Summary:"
 Write-Host "  * Python virtual environment: $venvPath"
-Write-Host "  * CARLA API: Installed (v0.9.16)"
+Write-Host "  * CARLA API: Installed (v0.9.14)"
 Write-Host "  * CARLA Server: $carlaPath\WindowsNoEditor"
 Write-Host "  * Metamodel: $repoRoot\model\SceneGraph.ecore"
 Write-Host "  * VIATRA Queries: $repoRoot\queries\scenegraph.vql"
@@ -349,7 +347,7 @@ Write-Host ""
 
 Write-Host "2. START CARLA SERVER:"
 Write-Host ""
-Write-Host "   .\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed"
+Write-Host "   .\CARLA_0.9.14\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed"
 Write-Host "   (Server will listen on 127.0.0.1:2000 by default)"
 Write-Host ""
 
