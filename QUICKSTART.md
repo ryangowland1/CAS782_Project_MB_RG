@@ -161,7 +161,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Place it in the `src` folder
    - Right-click `apiqueries` package → `Import` → `General` → `File System`
    - Browse to: `CAS782_Project_MB_RG\queries`
-   - Select `apiscenegraph.java`
+   - Select `QueryRunner.java`
    - Click `Finish`
 
 3. **Import XML**
@@ -182,7 +182,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Add a rule with a Resolution of `Accessible` and a Rule Pattern of `queries/*`
 
 6. **Review Available Patterns**
-   - Open `apiscenegraph.java`
+   - Open `QueryRunner.java`
    - You'll see three patterns:
      - `slowVehicle` - Finds vehicles moving slower than 50 km/h
    - Go to line 48 and change the path so it uses your username
