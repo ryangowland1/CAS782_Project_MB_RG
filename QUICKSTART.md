@@ -159,7 +159,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - `File` → `New` → `Other` → `Java` → `Package`
    - Name: `apiqueries` 
    - Place it in the `src` folder
-   - Right-click `queries` package → `Import` → `General` → `File System`
+   - Right-click `apiqueries` package → `Import` → `General` → `File System`
    - Browse to: `CAS782_Project_MB_RG\queries`
    - Select `apiscenegraph.java`
    - Click `Finish`
@@ -172,7 +172,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
   
 4. **Fix Manifest**
    - In the new project, open up `META-INF\MANIFEST.mf`
-   - Create an Export-Package key and give it the value `queries`
+   - Create an Export-Package key and give it the value `apiqueries`
    - In Require_Bundle, add `SceneGraphModel`, `SceneGraphQueries`, and 
    - Delete javax.annotations from the manifest
 
