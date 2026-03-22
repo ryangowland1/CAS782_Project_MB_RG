@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.0"?>
+
+<!--
+-->
+
+<plugin>
+
+   <extension point="org.eclipse.emf.ecore.generated_package">
+      <!-- @generated sceneGraphModel -->
+      <package
+            uri="http://cas782/scenegraph"
+            class="scenegraph.SceneGraphModelPackage"
+            genModel="model/sceneGraphModel.genmodel"/>
+   </extension>
+
+</plugin>

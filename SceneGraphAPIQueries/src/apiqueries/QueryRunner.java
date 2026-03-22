@@ -45,7 +45,7 @@ public class QueryRunner implements IApplication {
 		
 		rs.getResource(
 			    URI.createFileURI(
-			    	"C:/Users/marko/eclipse-workspace/SceneGraphModel/demo_mock.xmi"
+			    	"C:/Users/marko/Documents/CAS782_Project_MB_RG/SceneGraphModel/demo_mock.xmi"
 			    ),
 			true
 		);

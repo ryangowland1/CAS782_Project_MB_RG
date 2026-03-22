@@ -1,0 +1,15 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: SceneGraphAPIQueries
+Bundle-SymbolicName: SceneGraphAPIQueries;singleton:=true
+Bundle-Version: 0.0.1.qualifier
+Export-Package: apiqueries
+Require-Bundle: SceneGraphQueries, org.eclipse.emf.ecore,
+ org.eclipse.emf.ecore.xmi,
+ org.eclipse.core.runtime,
+ org.eclipse.viatra.query.runtime,
+ org.eclipse.viatra.query.runtime.rete,
+ org.eclipse.viatra.query.runtime.localsearch,
+ org.eclipse.xtext.xbase.lib
+Import-Package: org.apache.log4j
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8

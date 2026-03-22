@@ -1,5 +1,7 @@
 # Build Files
+bin/
 .gradle/
+src-gen/
 
 # CARLA Installation (Large Files - ~20GB)
 CARLA_0.9.14/
@@ -84,5 +86,4 @@ htmlcov/
 
 # Eclipse/VIATRA Working Files
 .metadata/
-.project
 .pydevproject
