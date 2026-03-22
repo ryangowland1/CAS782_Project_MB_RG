@@ -4,8 +4,8 @@ bin/
 src-gen/
 
 # CARLA Installation (Large Files - ~20GB)
-CARLA_0.9.14/
-CARLA_0.9.14.zip
+CARLA_0.9.16/
+CARLA_0.9.16.zip
 
 # Output data
 data/

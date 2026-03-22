@@ -200,7 +200,7 @@ if (-not $CarlaOnly) {
     
     Write-Host "`n  2. Import the metamodel:" -ForegroundColor White
     Write-Host "     - File > New > Project > Empty EMF Project" -ForegroundColor Gray
-    Write-Host "     - Import model\SceneGraph.ecore" -ForegroundColor Green
+    Write-Host "     - Import SceneGraphModel\model\sceneGraphModel.ecore" -ForegroundColor Green
     Write-Host "     - Right-click .ecore > Register EPackages" -ForegroundColor Gray
     
     Write-Host "`n  3. Import a scene graph instance:" -ForegroundColor White
@@ -210,7 +210,7 @@ if (-not $CarlaOnly) {
     
     Write-Host "`n  4. Create VIATRA queries:" -ForegroundColor White
     Write-Host "     - File > New > VIATRA Query Project" -ForegroundColor Gray
-    Write-Host "     - Import queries\scenegraph.vql" -ForegroundColor Green
+    Write-Host "     - Import SceneGraphQueries\src\queries\scenegraph.vql" -ForegroundColor Green
     Write-Host "     - Available patterns:" -ForegroundColor Gray
     Write-Host "       • fastVehicle - finds vehicles moving > 50 km/h" -ForegroundColor Cyan
     Write-Host "       • connected - generic connectivity pattern" -ForegroundColor Cyan

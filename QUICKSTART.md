@@ -29,7 +29,7 @@
 Open a **new terminal** and run from the project root:
 
 ```powershell
-.\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed
+.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed
 ```
 
 Wait for CARLA window to fully load (you'll see the main menu or simulation view).
@@ -149,7 +149,7 @@ Get-Content .\data\demo.xmi
 
 ```powershell
 # Terminal 1: Start CARLA
-.\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed
+.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed
 
 # Terminal 2 (this project): Generate scene graph
 .\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --output .\data\live.xmi
@@ -162,7 +162,7 @@ Get-Content .\data\demo.xmi
 
 ```powershell
 # Terminal 1: Start CARLA (if using real mode)
-.\CARLA_0.9.16\WindowsNoEditor\CarlaUE4.exe -quality-level=Low -windowed
+.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed
 
 # Terminal 2: Start streaming bridge
 powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Interval 1.0
