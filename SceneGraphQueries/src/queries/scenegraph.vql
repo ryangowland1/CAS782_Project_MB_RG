@@ -5,5 +5,5 @@ import "http://cas782/scenegraph"
 // Vehicles moving slower than threshold.
 pattern slowVehicle(v: Vehicle) {
     Vehicle.speed(v, s);
-    check(s > 13.9); // 50 km/h approx in m/s
+    check(s < 13.9); // 50 km/h approx in m/s
 }
