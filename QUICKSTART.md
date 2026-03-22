@@ -63,7 +63,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 
 ## Part 2: VIATRA Query Analysis
 
-### Setup JDK + Eclipse + XTend + VIATRA
+### Setup Dependencies
 
 1. **Download JDK**
    - Go to https://www.oracle.com/ca-en/java/technologies/downloads
@@ -84,116 +84,52 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Search for and install VIATRA
    - Restart Eclipse
 
-### Import Scene Graph Metamodel
+### Setup Queries
 
-1. **Create Ecore Project**
-   - `File` → `New` → `Project` → `Eclipse Modeling Framework` → `Ecore Modeling Project`
-   - Name: `SceneGraphModel`
+1. **Change Workspace**
+   - `File` → `Switch Workspace` → `Other`
+   - Navigate to and select `CAS782_Project_MB_RG`
 
-2. **Import Ecore**
-   - Go to `model\SceneGraphModel.ecore`
-   - Right click -> `Open With` → `Plain Text Editor`
-   - Replace with the contents of `\CAS782_Project_MB_RG\model\SceneGraph.ecore`
-   - Save the file
+2. **Import Projects**
+   - `File` → `Open Projects from File System` → `Directory`
+   - Select `CAS782_Project_MB_RG`
+   - A list with `CAS782_Project_MB_RG` and the 3 projects should pop up. Unselect `CAS782_Project_MB_RG`, leave the 3 projects selected
 
-### Import Scene Graph Instance
+3. **Generate Folders**
+   - `File` → `New` → `Folder` → `Java` → `Package`
+   - Name: `src` 
+   - Place it in the `SceneGraphModel` project
+   - `File` → `New` → `Folder` → `Java` → `Package`
+   - Name: `src-gen` 
+   - Place it in the `SceneGraphAPIQueries` project
+   - This project requires empty folders but empty folders cannot be pushed to git
 
-1. **Import XMI File**
-   - Right-click 'SceneGraphModel' → `Import` → `General` → `File System`
-   - Browse to: `\CAS782_Project_MB_RG\data`
-   - Select `demo_mock.xmi` (or `scene_live.xmi`)
-   - Click `Finish`
-
-2. **Generate Scene Graph Code**
-   - In Eclipse, open up '\model\sceneGraphModel.genmodel'
+4. **Generate Scene Graph Code**
+   - In Eclipse, open up 'SceneGraphModel\model\sceneGraphModel.genmodel'
    - Right-click 'SceneGraphModel' (in the sceneGraphModel.genmodel window, not in the Model Explorer window) → `Generate Model Code`
-
-3. **Open in Sample Reflective Ecore Model Editor**
-   - Right-click the XMI file → `Open With` → `Sample Reflective Ecore Model Editor`
-   - You should see the scene hierarchy:
-     ```
-     Scene
-     ├─ nodes
-     │  ├─ Vehicle (veh-ego)
-     │  ├─ Vehicle (veh-1)
-     │  └─ Pedestrian (ped-1)
-     └─ edges
-        ├─ proximity (veh-ego → veh-1)
-        ├─ proximity (veh-ego → ped-1)
-        └─ proximity (veh-1 → ped-1)
-     ```
-
-### Create VIATRA Queries
-
-1. **Create Query Project**
-   - `File` → `New` → `Project` → `VIATRA` → `VIATRA Query Project`
-   - Name: `SceneGraphQueries`
-
-2. **Import Queries**
-   - `File` → `New` → `Other` → `Java` → `Package`
-   - Name: `queries` 
-   - Place it in the `src` folder
-   - Right-click `queries` package → `Import` → `General` → `File System`
-   - Browse to: `CAS782_Project_MB_RG\queries`
-   - Select `scenegraph.vql`
-   - Click `Finish`
   
-3. **Fix Manifest**
-   - In the new project, open up `META-INF\MANIFEST.mf`
-   - Create an Export-Package key and give it the value `queries`
-   - In Require-Bundle, add `SceneGraphModel`
-   - Delete javax.annotations from the manifest
-  
-4. **Review Available Patterns**
-   - Open `scenegraph.vql`
-   - You'll see one pattern:
-     - `slowVehicle` - Finds vehicles moving slower than 50 km/h
+5. **Clean Projects**
+   - `Project` → `Clean`
+   - Clean `SceneGraphModel`, `SceneGraphQueries`, and `SceneGraphAPIQueries`, in that order
 
 ### Execute Queries
-   
-1. **Create API Query Project**
-   - `File` → `New` → `Project` → `VIATRA` → `VIATRA Query Project`
-   - Name: `SceneGraphAPIQueries`
 
-2. **Import Queries**
-   - `File` → `New` → `Other` → `Java` → `Package`
-   - Name: `apiqueries` 
-   - Place it in the `src` folder
-   - Right-click `apiqueries` package → `Import` → `General` → `File System`
-   - Browse to: `CAS782_Project_MB_RG\queries`
-   - Select `QueryRunner.java`
-   - Click `Finish`
-
-3. **Import XML**
-   - Right-click `SceneGraphAPIQueries` package → `Import` → `General` → `File System`
-   - Browse to: `CAS782_Project_MB_RG\queries`
-   - Select `plugins.xml`
-   - Click `Finish`
-  
-4. **Fix Manifest**
-   - In the new project, open up `META-INF\MANIFEST.mf`
-   - Create an Export-Package key and give it the value `apiqueries`
-   - In Require_Bundle, add `SceneGraphModel`, `SceneGraphQueries`, and 
-   - Delete javax.annotations from the manifest
-
-5. **Make SceneGraphQueries Accessible to SceneGraphAPIQueries**
-   - Right-click `SceneGraphQueries`
-   - Properties → Java Build Path → Plug-in Dependencies → Access rules: No rules defined
-   - Add a rule with a Resolution of `Accessible` and a Rule Pattern of `queries/*`
-
-6. **Review Available Patterns**
-   - Open `QueryRunner.java`
+1. **Review Available Query Patterns**
+   - Open `SceneGraphAPIQueries\src\apiqueries\QueryRunner.java`
    - You'll see three patterns:
      - `slowVehicle` - Finds vehicles moving slower than 50 km/h
-   - Go to line 48 and change the path so it uses your username
+   - Go to line 48 and change the path so it is correct for your system
+
+2. **Open up a Console**
+   - `Window` → `Show View` → `Other` → `General` → `Console`
     
-7. **Evaluate Available Patterns**
-   - Right-click `SceneGraphModel`
+3. **Evaluate Available Patterns**
+   - Right-click `SceneGraphAPIQueries`
    - Right-click `Eclipse Application`
    - Click `New configuration`
    - Program to Run → Run an application → SceneGraphAPIQueries.queryrunner
    - Click `Run`
-   - Note that building the application took slightly over 2 minutes for me. Not sure why. Running the VIATRA query took 180 ms
+   - Note that building the application took slightly over 2 minutes for me. Not sure why. Running the VIATRA query took around 200 ms
 
 ## Example Workflow
 
