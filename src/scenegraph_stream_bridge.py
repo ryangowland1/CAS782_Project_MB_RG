@@ -212,7 +212,7 @@ def main() -> int:
 
         snapshot_name = f"snapshot_{tick:06d}.xmi"
         snapshot_path = snap_dir / snapshot_name
-        write_scene_xmi(args.scene_name, nodes, edges, snapshot_path)
+        # write_scene_xmi(args.scene_name, nodes, edges, snapshot_path)
         write_scene_xmi(args.scene_name, nodes, edges, latest_path)
         write_live_view_html(view_path, nodes, edges, tick)
 
