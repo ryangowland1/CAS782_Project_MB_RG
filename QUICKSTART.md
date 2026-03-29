@@ -29,7 +29,7 @@
 Open a **new terminal** and run from the project root:
 
 ```powershell
-.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed
+.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed -dx11
 ```
 
 Wait for CARLA window to fully load (you'll see the main menu or simulation view).
@@ -43,6 +43,12 @@ Wait for CARLA window to fully load (you'll see the main menu or simulation view
 **Result:** Creates `data/scene_live.xmi` with actors from the live CARLA world.
 
 ### Option C: Continuous Streaming
+
+Start a scenario
+
+```powershell
+.\.venv\Scripts\python.exe .\src\scenario_traffic.py --output .\data\scene_live.xmi
+```
 
 Start the streaming bridge (updates scene graph every second):
 
