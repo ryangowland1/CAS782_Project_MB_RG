@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+import time
+import portalocker
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +112,46 @@ def build_edges(nodes: List[Node], proximity_m: float) -> List[Edge]:
                 edges.append(Edge("proximity", i, j))
     return edges
 
+def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
+    """
+    Writes an XML/XMI file with retry logic if the file is locked.
+
+    :param tree: ElementTree to write
+    :param path: Output file path
+    :param retries: Number of retry attempts
+    :param delay: Delay between retries in seconds
+    :return: True if successful, False otherwise
+    """
+    last_exception = None
+
+    for attempt in range(retries):
+        try:
+            with open(path, 'wb') as f:
+                try:
+                    # Exclusive non-blocking lock (Java tryLock equivalent)
+                    portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                except portalocker.exceptions.LockException as e:
+                    last_exception = e
+                    if attempt == retries - 1:
+                        print(f"File is locked after {retries} attempts: {path}")
+                        return False
+                    time.sleep(delay)
+                    continue
+
+                try:
+                    tree.write(f, encoding='utf-8', xml_declaration=True)
+                    f.flush()
+                    return True
+                finally:
+                    portalocker.unlock(f)
+
+        except Exception as e:
+            last_exception = e
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay)
+
+    return False
 
 def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], output_path: Path) -> None:
     scene_tag = f"{{{SCENEGRAPH_NS}}}Scene"
@@ -148,7 +190,7 @@ def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], outpu
     tree = ET.ElementTree(root)
     if hasattr(ET, "indent"):
         ET.indent(tree, space="  ")
-    tree.write(output_path, encoding="utf-8", xml_declaration=True)
+    write_xmi_with_retry(tree, output_path)
 
 
 def parse_args() -> argparse.Namespace:

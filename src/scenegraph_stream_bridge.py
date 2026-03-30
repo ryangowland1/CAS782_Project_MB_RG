@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import portalocker
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
@@ -125,7 +127,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 <html>
 <head>
   <meta charset=\"utf-8\" />
-  <meta http-equiv=\"refresh\" content=\"2\" />
+  <meta http-equiv=\"refresh\" content=\"0.5\" />
   <title>Scene Graph Live View</title>
   <style>
     body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; margin: 0; }}
@@ -139,7 +141,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
   <div class=\"wrap\">
     <div class=\"head\">
       <strong>CARLA Scene Graph Live View</strong>
-      <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 2s</div>
+      <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 500ms</div>
     </div>
     <svg viewBox=\"0 0 960 540\" xmlns=\"http://www.w3.org/2000/svg\">
       {''.join(line_parts)}
@@ -188,6 +190,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mock", action="store_true", help="Run without CARLA using synthetic movement")
     return parser.parse_args()
 
+def read_xml_with_retry(path, retries=5, delay=0.05):
+    last_exception = None
+
+    for attempt in range(retries):
+        try:
+            with open(path, 'rb') as f:
+                try:
+                    # Match Java tryLock(): exclusive + non-blocking
+                    portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                except portalocker.exceptions.LockException as e:
+                    last_exception = e
+                    if attempt == retries - 1:
+                        print(f"File is locked after {retries} attempts: {path}")
+                        return None
+                    time.sleep(delay)
+                    continue
+
+                try:
+                    return ET.parse(f)
+                finally:
+                    portalocker.unlock(f)
+
+        except Exception as e:
+            last_exception = e
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay)
+
+    raise Exception("Unexpected failure") from last_exception
 
 def main() -> int:
     args = parse_args()
@@ -208,11 +239,37 @@ def main() -> int:
     while True:
         tick += 1
         nodes = collect_nodes(args.mock, args.carla_address, args.port, args.timeout, tick)
-        edges = build_edges(nodes, args.proximity_threshold)
+        new_edges = [] # build_edges(nodes, args.proximity_threshold)
+
+        # Read existing edges from latest XMI
+        edges: List[Edge] = []
+        if latest_path.exists():
+            try:
+                tree = read_xml_with_retry(latest_path)
+                root = tree.getroot()
+                for edge_elem in root.findall("edges"):
+                    edges.append(
+                        Edge(
+                            edge_type=edge_elem.get("type"),
+                            source_index=int(edge_elem.get("source").split(".")[-1]),
+                            target_index=int(edge_elem.get("target").split(".")[-1]),
+                        )
+                    )
+            except ET.ParseError:
+                # If file is corrupted or empty, fallback to new edges
+                edges = []
+
+        # Merge new edges with existing ones, avoiding duplicates
+        existing_keys = {(e.source_index, e.target_index, e.edge_type) for e in edges}
+        for e in new_edges:
+            key = (e.source_index, e.target_index, e.edge_type)
+            if key not in existing_keys:
+                edges.append(e)
+                existing_keys.add(key)
 
         snapshot_name = f"snapshot_{tick:06d}.xmi"
         snapshot_path = snap_dir / snapshot_name
-        # write_scene_xmi(args.scene_name, nodes, edges, snapshot_path)
+        # Write scene with merged edges
         write_scene_xmi(args.scene_name, nodes, edges, latest_path)
         write_live_view_html(view_path, nodes, edges, tick)
 

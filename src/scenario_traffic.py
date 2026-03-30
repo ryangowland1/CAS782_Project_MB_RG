@@ -5,7 +5,7 @@ CARLA Scenario: Multi-Vehicle Traffic Scene
 Spawns multiple vehicles in traffic mode with autopilot.
 Creates a realistic traffic scenario for scene graph export.
 
-Duration: 120 seconds to allow rich state capture
+Duration: 1200 seconds to allow rich state capture
 """
 
 import carla
@@ -57,7 +57,7 @@ def main():
     iteration = 0
     
     try:
-        while time.time() - start_time < 120:  # 2 minutes
+        while time.time() - start_time < 1200:  # 20 minutes
             iteration += 1
             elapsed = time.time() - start_time
             
