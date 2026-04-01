@@ -27,6 +27,7 @@
     <genClasses ecoreClass="sceneGraphModel.ecore#//RoadSegment"/>
     <genClasses ecoreClass="sceneGraphModel.ecore#//Edge">
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute sceneGraphModel.ecore#//Edge/type"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute sceneGraphModel.ecore#//Edge/distance"/>
       <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference sceneGraphModel.ecore#//Edge/source"/>
       <genFeatures notify="false" createChild="false" propertySortChoices="true" ecoreFeature="ecore:EReference sceneGraphModel.ecore#//Edge/target"/>
     </genClasses>

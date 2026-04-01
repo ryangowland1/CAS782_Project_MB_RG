@@ -1,14 +1,13 @@
+// NOTE: At some point should move to event-based transforms. This may require setting up a socket interface so the Python
+// scene graph output can send notifications of model changes to VIATRA
+
 package apiqueries;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 
 import java.util.Collections;
 import java.util.List;
-
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
@@ -32,14 +31,14 @@ import scenegraph.Vehicle;
 import scenegraph.SceneGraphModelFactory;
 
 // VIATRA Query Import
-import queries.CloseVehicles;
-import queries.FarVehicles;
+import queries.VisibleDistance;
+import queries.RemoveEdge;
 
 public class QueryRunner implements IApplication {
 
     private static final String MODEL_PATH = 
         "C:\\Users\\marko\\Documents\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
-    private static final long POLL_INTERVAL_MS = 500;
+    private static final long POLL_INTERVAL_MS = 200;
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
@@ -56,35 +55,51 @@ public class QueryRunner implements IApplication {
             ViatraQueryEngine engine = ViatraQueryEngine.on(scope);
 
             // 1. Define the Rule
-            BatchTransformationRule<CloseVehicles.Match, CloseVehicles.Matcher> proximityRule = 
-                new BatchTransformationRuleFactory().createRule(CloseVehicles.instance())
-                .name("ProximityEdgeRule")
-                .action(match -> {
-                    Vehicle v1 = match.getO1();
-                    Vehicle v2 = match.getO2();
-                    Scene scene = (Scene) v1.eContainer();
+            BatchTransformationRule<VisibleDistance.Match, VisibleDistance.Matcher> proximityRule = 
+        	    new BatchTransformationRuleFactory().createRule(VisibleDistance.instance())
+        	    .name("VisibleDistanceRule")
+        	    .action(match -> {
+        	        Vehicle v1 = match.getO1();
+        	        Vehicle v2 = match.getO2();
 
-                    // Check if an edge already exists in either direction
-                    boolean exists = scene.getEdges().stream().anyMatch(e ->
-                        "proximity".equals(e.getType()) &&
-                        ((e.getSource() == v1 && e.getTarget() == v2) ||
-                         (e.getSource() == v2 && e.getTarget() == v1))
-                    );
+        	        // Only proceed if source ID < target ID
+        	        if (v1.getId().compareTo(v2.getId()) >= 0) {
+        	            return; // Skip this pair
+        	        }
 
-                    if (!exists) {
-                        Edge edge = SceneGraphModelFactory.eINSTANCE.createEdge();
-                        edge.setSource(v1);
-                        edge.setTarget(v2);
-                        edge.setType("proximity");
-                        scene.getEdges().add(edge);
-                        System.out.println("Created proximity edge: " + v1.getId() + " -> " + v2.getId());
-                    }
-                })
-                .build();
+        	        Scene scene = (Scene) v1.eContainer();
+
+        	        // Check if an edge already exists (and get it)
+        	        Edge existingEdge = scene.getEdges().stream()
+        	            .filter(e -> "proximity".equals(e.getType()))
+        	            .filter(e -> e.getSource() == v1 && e.getTarget() == v2)
+        	            .findFirst()
+        	            .orElse(null);
+
+                    if (existingEdge == null) {
+        	            // No edge exists → create one
+        	            Edge edge = SceneGraphModelFactory.eINSTANCE.createEdge();
+        	            edge.setDistance("Visible");
+        	            edge.setSource(v1);
+        	            edge.setTarget(v2);
+        	            edge.setType("proximity");
+        	            scene.getEdges().add(edge);
+        	            System.out.println("Created visible distance edge: " +
+        	                               v1.getId() + " -> " + v2.getId() + " with distance Visible");
+        	        } else {
+        	            // Edge exists → update distance if needed
+        	            if (!"Visible".equals(existingEdge.getDistance())) {
+        	                existingEdge.setDistance("Visible");
+        	                System.out.println("Updated distance for edge: " +
+        	                                   v1.getId() + " -> " + v2.getId() + " to Visible");
+        	            }
+        	        }
+        	    })
+        	    .build();
             
-            BatchTransformationRule<FarVehicles.Match, FarVehicles.Matcher> removeProximityRule =
-        	    new BatchTransformationRuleFactory().createRule(FarVehicles.instance())
-        	    .name("RemoveProximityEdgeRule")
+            BatchTransformationRule<RemoveEdge.Match, RemoveEdge.Matcher> removeProximityRule =
+        	    new BatchTransformationRuleFactory().createRule(RemoveEdge.instance())
+        	    .name("RemoveEdgeRule")
         	    .action(match -> {
         	        Vehicle v1 = match.getO1();
         	        Vehicle v2 = match.getO2();
@@ -100,7 +115,7 @@ public class QueryRunner implements IApplication {
         	        // Remove any edges between far vehicles
         	        toRemove.forEach(e -> {
         	            scene.getEdges().remove(e);
-        	            System.out.println("Removed proximity edge (far vehicles): " +
+        	            System.out.println("Removed edge (vehicles are too far): " +
         	                               e.getSource().getId() + " <-> " + e.getTarget().getId());
         	        });
         	    })
@@ -118,7 +133,7 @@ public class QueryRunner implements IApplication {
             long end = System.nanoTime();
             System.out.println("VIATRA took: " + (end - start) / 1_000_000 + " ms");
 
-            // Sleep 0.5 seconds before reloading
+            // Sleep POLL_INTERVAL_MS milliseconds before reloading
             Thread.sleep(POLL_INTERVAL_MS);
         }
     }
@@ -159,7 +174,7 @@ public class QueryRunner implements IApplication {
 
     	    // Retry delay
     	    try {
-    	        Thread.sleep(50);
+    	        Thread.sleep(20);
     	    } catch (InterruptedException ie) {
     	        Thread.currentThread().interrupt();
     	        return null;
@@ -169,12 +184,13 @@ public class QueryRunner implements IApplication {
     	// Failed after retries
     	return null;
     }
-
+    
+    // TODO: Implement retry logic here like with loadResource()
     private void saveResource(Resource resource) {
         try {
             resource.save(Collections.emptyMap());
             System.out.println("Model updated and saved.");
-        } catch (IOException e) { e.printStackTrace(); }
+        } catch (IOException e) { }
     }
 
     @Override

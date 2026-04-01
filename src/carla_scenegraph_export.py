@@ -39,6 +39,7 @@ class Node:
 @dataclass
 class Edge:
     edge_type: str
+    distance: str
     source_index: int
     target_index: int
 
@@ -181,6 +182,7 @@ def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], outpu
             "edges",
             {
                 "type": edge.edge_type,
+                "distance": edge.distance,
                 "source": f"//@nodes.{edge.source_index}",
                 "target": f"//@nodes.{edge.target_index}",
             },

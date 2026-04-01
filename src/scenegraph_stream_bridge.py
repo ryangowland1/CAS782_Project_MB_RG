@@ -43,7 +43,7 @@ def edge_key(edge: Edge, nodes: List[Node]) -> Tuple[str, str, str]:
     dst = nodes[edge.target_index].external_id
     if src > dst:
         src, dst = dst, src
-    return (edge.edge_type, src, dst)
+    return (edge.edge_type, src, dst, edge.distance)
 
 
 def diff_nodes(prev: Dict[str, Dict[str, object]], curr_nodes: List[Node]) -> Dict[str, List[object]]:
@@ -70,8 +70,8 @@ def diff_edges(prev: Set[Tuple[str, str, str]], curr_edges: List[Edge], curr_nod
     added = sorted(curr - prev)
     removed = sorted(prev - curr)
     return {
-        "added": [{"type": t, "source": s, "target": d} for t, s, d in added],
-        "removed": [{"type": t, "source": s, "target": d} for t, s, d in removed],
+        "added": [{"type": t, "source": s, "target": d, "distance": i} for t, s, d, i in added],
+        "removed": [{"type": t, "source": s, "target": d , "distance": i} for t, s, d, i in removed],
     }
 
 
@@ -127,7 +127,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 <html>
 <head>
   <meta charset=\"utf-8\" />
-  <meta http-equiv=\"refresh\" content=\"0.5\" />
+  <meta http-equiv=\"refresh\" content=\"0.2\" />
   <title>Scene Graph Live View</title>
   <style>
     body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; margin: 0; }}
@@ -141,7 +141,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
   <div class=\"wrap\">
     <div class=\"head\">
       <strong>CARLA Scene Graph Live View</strong>
-      <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 500ms</div>
+      <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 200ms</div>
     </div>
     <svg viewBox=\"0 0 960 540\" xmlns=\"http://www.w3.org/2000/svg\">
       {''.join(line_parts)}
@@ -251,6 +251,7 @@ def main() -> int:
                     edges.append(
                         Edge(
                             edge_type=edge_elem.get("type"),
+                            distance=edge_elem.get("distance"),
                             source_index=int(edge_elem.get("source").split(".")[-1]),
                             target_index=int(edge_elem.get("target").split(".")[-1]),
                         )
@@ -260,9 +261,9 @@ def main() -> int:
                 edges = []
 
         # Merge new edges with existing ones, avoiding duplicates
-        existing_keys = {(e.source_index, e.target_index, e.edge_type) for e in edges}
+        existing_keys = {(e.source_index, e.target_index, e.edge_type, e.distance) for e in edges}
         for e in new_edges:
-            key = (e.source_index, e.target_index, e.edge_type)
+            key = (e.source_index, e.target_index, e.edge_type, e.distance)
             if key not in existing_keys:
                 edges.append(e)
                 existing_keys.add(key)

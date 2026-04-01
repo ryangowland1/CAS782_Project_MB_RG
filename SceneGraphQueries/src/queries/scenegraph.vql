@@ -2,8 +2,8 @@ package queries
 
 import "http://cas782/scenegraph"
 
-// Vehicles within ~25 ft (~7.62 m)
-pattern closeVehicles(o1: Vehicle, o2: Vehicle) {
+// Vehicles within ~16 ft (~4.88 m) to ~25 ft (~7.62 m)
+pattern VisibleDistance(o1: Vehicle, o2: Vehicle) {
     o1 != o2;
 
     Node.x(o1, x1);
@@ -11,11 +11,13 @@ pattern closeVehicles(o1: Vehicle, o2: Vehicle) {
     Node.x(o2, x2);
     Node.y(o2, y2);
 
-    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) < 58.0644);
+    // Values are in m^2
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) < 58.06 &&
+    ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 23.78);
 }
 
 // Vehicles further than ~25 ft (~7.62 m)
-pattern farVehicles(o1: Vehicle, o2: Vehicle) {
+pattern RemoveEdge(o1: Vehicle, o2: Vehicle) {
     o1 != o2;
 
     Node.x(o1, x1);
@@ -23,5 +25,6 @@ pattern farVehicles(o1: Vehicle, o2: Vehicle) {
     Node.x(o2, x2);
     Node.y(o2, y2);
 
+    // Values are in m^2
     check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) >= 58.0644);
 }
