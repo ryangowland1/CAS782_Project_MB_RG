@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Export a CARLA world snapshot to SceneGraph XMI.
 
-This script writes XMI instances that conform to model/SceneGraph.ecore.
+This script writes XMI instances that conform to
+SceneGraphModel/model/sceneGraphModel.ecore.
 Use --mock to generate a deterministic sample without CARLA.
 """
+
+# NOTE: THIS WILL NOT HANDLE CURVED LANES PROPERLY AS IT ASSUMES ALL LANES ARE STRAIGHT FOR LENGTH/WIDTH ATTRIBUTES. 
+# A PROPER IMPLEMENTATION WOULD NEED TO CAPTURE LANE CURVATURE AND REPRESENT IT IN THE SCENEGRAPH MODEL, 
+# WHICH MAY REQUIRE EXTENDING THE MODEL TO SUPPORT CURVED ROAD SEGMENTS OR POLYLINE REPRESENTATIONS.
 
 from __future__ import annotations
 
@@ -33,13 +38,17 @@ class Node:
     x: float
     y: float
     z: float
+    heading: float
     speed: Optional[float] = None
+    length: Optional[float] = None
+    width: Optional[float] = None
 
 
 @dataclass
 class Edge:
     edge_type: str
     distance: str
+    spatial: str
     source_index: int
     target_index: int
 
@@ -51,12 +60,33 @@ def _distance(a: Node, b: Node) -> float:
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 
 
+def _waypoint_segment_length(start_waypoint, end_waypoint) -> float:
+    """Estimate lane segment length for a topology edge in meters."""
+    try:
+        # CARLA waypoint.s is longitudinal arc-length along the road reference line.
+        seg = abs(float(end_waypoint.s) - float(start_waypoint.s))
+        if seg > 0.0:
+            return seg
+    except Exception:
+        pass
+
+    # Fallback for unusual topology entries where s is unavailable/degenerate.
+    return float(start_waypoint.transform.location.distance(end_waypoint.transform.location))
+
+
 def collect_mock_nodes() -> List[Node]:
-    return [
-        Node("Vehicle", "veh-ego", 0.0, 0.0, 0.0, speed=8.0),
-        Node("Vehicle", "veh-1", 10.0, 0.0, 0.0, speed=12.5),
-        Node("Pedestrian", "ped-1", 11.0, 1.0, 0.0),
+    nodes = [
+        Node("Vehicle", "veh-ego", 0.0, 0.0, 0.0, 0.0, speed=8.0),
+        Node("Vehicle", "veh-1", 10.0, 0.0, 0.0, 1.57, speed=12.5),
+        Node("Pedestrian", "ped-1", 11.0, 1.0, 0.0, 0.785),
     ]
+    # Add mock lanes
+    nodes.extend([
+        Node("RoadSegment", "lane-1", 0.0, -2.0, 0.0, 0.0, length=40.0, width=3.5),
+        Node("RoadSegment", "lane-2", 0.0, 2.0, 0.0, 0.0, length=40.0, width=3.5),
+        Node("RoadSegment", "lane-3", 10.0, -2.0, 0.0, 1.57, length=30.0, width=3.5),
+    ])
+    return nodes
 
 
 def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
@@ -72,11 +102,14 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
     world = client.get_world()
 
     nodes: List[Node] = []
+    
+    # Collect vehicles and pedestrians
     for actor in world.get_actors():
         actor_type = actor.type_id
         transform = actor.get_transform()
         velocity = actor.get_velocity()
         speed = math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
+        heading = math.radians(transform.rotation.yaw)
 
         if actor_type.startswith("vehicle."):
             nodes.append(
@@ -86,6 +119,7 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
                     x=transform.location.x,
                     y=transform.location.y,
                     z=transform.location.z,
+                    heading=heading,
                     speed=speed,
                 )
             )
@@ -97,8 +131,68 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
                     x=transform.location.x,
                     y=transform.location.y,
                     z=transform.location.z,
+                    heading=heading,
                 )
             )
+    
+    # Collect lanes as road segments
+    try:
+        carla_map = world.get_map()
+        topology = carla_map.get_topology()
+
+        # Track lane extent using OpenDRIVE s-coordinates
+        lane_metrics = {}
+        for start_waypoint, end_waypoint in topology:
+            # Restrict to strict driving lanes
+            if start_waypoint.lane_type != carla.LaneType.Driving:
+                continue
+
+            lane_id = start_waypoint.lane_id
+            road_id = start_waypoint.road_id
+            lane_key = (road_id, lane_id)
+
+            if lane_key not in lane_metrics:
+                lane_metrics[lane_key] = {
+                    "waypoint": start_waypoint,
+                    "s_min": float(start_waypoint.s),
+                    "s_max": float(start_waypoint.s),
+                    "width": float(start_waypoint.lane_width),
+                }
+            
+            # Update s extent to capture full lane span
+            s_start = float(start_waypoint.s)
+            s_end = float(end_waypoint.s)
+            lane_metrics[lane_key]["s_min"] = min(lane_metrics[lane_key]["s_min"], s_start, s_end)
+            lane_metrics[lane_key]["s_max"] = max(lane_metrics[lane_key]["s_max"], s_start, s_end)
+            lane_metrics[lane_key]["width"] = max(
+                lane_metrics[lane_key]["width"],
+                float(start_waypoint.lane_width),
+            )
+
+        # Create RoadSegment nodes for each unique lane
+        for (road_id, lane_id), metrics in lane_metrics.items():
+            waypoint = metrics["waypoint"]
+            # Lane length is the span of s-coordinates
+            lane_length = metrics["s_max"] - metrics["s_min"]
+            if lane_length < 0.1:  # Skip degenerate lanes
+                continue
+            external_id = f"lane_{road_id}_{lane_id}"
+            nodes.append(
+                Node(
+                    node_type="RoadSegment",
+                    external_id=external_id,
+                    x=waypoint.transform.location.x,
+                    y=waypoint.transform.location.y,
+                    z=waypoint.transform.location.z,
+                    heading=math.radians(waypoint.transform.rotation.yaw),
+                    length=float(lane_length),
+                    width=float(metrics["width"]),
+                )
+            )
+    except Exception as e:
+        print(f"Warning: Could not collect lane data: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
 
     return nodes
 
@@ -109,8 +203,9 @@ def build_edges(nodes: List[Node], proximity_m: float) -> List[Edge]:
         for j, dst in enumerate(nodes):
             if i >= j:
                 continue
-            if _distance(src, dst) <= proximity_m:
-                edges.append(Edge("proximity", i, j))
+            dist = _distance(src, dst)
+            if dist <= proximity_m:
+                edges.append(Edge("proximity", f"{dist:.6f}", "", i, j))
     return edges
 
 def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
@@ -167,13 +262,19 @@ def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], outpu
     for node in nodes:
         attrs = {
             f"{{{XSI_NS}}}type": f"scenegraph:{node.node_type}",
-            "id": node.external_id,
+            "id": str(node.external_id),
             "x": f"{node.x:.6f}",
             "y": f"{node.y:.6f}",
             "z": f"{node.z:.6f}",
+            "heading": f"{node.heading:.6f}",
         }
         if node.node_type == "Vehicle" and node.speed is not None:
             attrs["speed"] = f"{node.speed:.6f}"
+        if node.node_type == "RoadSegment":
+            if node.length is not None:
+                attrs["length"] = f"{node.length:.6f}"
+            if node.width is not None:
+                attrs["width"] = f"{node.width:.6f}"
         ET.SubElement(root, "nodes", attrs)
 
     for edge in edges:
@@ -181,8 +282,9 @@ def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], outpu
             root,
             "edges",
             {
-                "type": edge.edge_type,
-                "distance": edge.distance,
+                "type": str(edge.edge_type or ""),
+                "distance": str(edge.distance or ""),
+                "spatial": str(edge.spatial or ""),
                 "source": f"//@nodes.{edge.source_index}",
                 "target": f"//@nodes.{edge.target_index}",
             },

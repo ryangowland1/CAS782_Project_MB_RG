@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?><plugin>
   <extension id="queries.Scenegraph" point="org.eclipse.viatra.query.runtime.queryspecification">
     <group group="org.eclipse.viatra.query.runtime.extensibility.SingletonExtensionFactory:queries.Scenegraph" id="queries.Scenegraph">
+      <query-specification fqn="queries.NearCollision"/>
+      <query-specification fqn="queries.SuperNear"/>
+      <query-specification fqn="queries.VeryNear"/>
+      <query-specification fqn="queries.Near"/>
       <query-specification fqn="queries.VisibleDistance"/>
       <query-specification fqn="queries.RemoveEdge"/>
+      <query-specification fqn="queries.FrontRight"/>
+      <query-specification fqn="queries.RightFront"/>
+      <query-specification fqn="queries.RightRear"/>
+      <query-specification fqn="queries.RearRight"/>
+      <query-specification fqn="queries.RearLeft"/>
+      <query-specification fqn="queries.LeftRear"/>
+      <query-specification fqn="queries.LeftFront"/>
+      <query-specification fqn="queries.FrontLeft"/>
+      <query-specification fqn="queries.VehicleOnLane"/>
+      <query-specification fqn="queries.RemoveVehicleOnLane"/>
     </group>
   </extension>
 </plugin>

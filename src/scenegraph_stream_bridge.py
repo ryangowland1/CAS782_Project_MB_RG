@@ -34,16 +34,19 @@ def normalize_node(node: Node) -> Dict[str, object]:
         "x": round(node.x, 4),
         "y": round(node.y, 4),
         "z": round(node.z, 4),
+        "heading": round(node.heading, 4),
         "speed": None if node.speed is None else round(node.speed, 4),
+        "length": None if node.length is None else round(node.length, 4),
+        "width": None if node.width is None else round(node.width, 4),
     }
 
 
-def edge_key(edge: Edge, nodes: List[Node]) -> Tuple[str, str, str]:
+def edge_key(edge: Edge, nodes: List[Node]) -> Tuple[str, str, str, str, str]:
     src = nodes[edge.source_index].external_id
     dst = nodes[edge.target_index].external_id
     if src > dst:
         src, dst = dst, src
-    return (edge.edge_type, src, dst, edge.distance)
+    return (edge.edge_type, src, dst, edge.distance, edge.spatial)
 
 
 def diff_nodes(prev: Dict[str, Dict[str, object]], curr_nodes: List[Node]) -> Dict[str, List[object]]:
@@ -52,8 +55,8 @@ def diff_nodes(prev: Dict[str, Dict[str, object]], curr_nodes: List[Node]) -> Di
     prev_ids = set(prev)
     curr_ids = set(curr)
 
-    added = [curr[i] for i in sorted(curr_ids - prev_ids)]
-    removed = [prev[i] for i in sorted(prev_ids - curr_ids)]
+    added: List[object] = [curr[i] for i in sorted(curr_ids - prev_ids)]
+    removed: List[object] = [prev[i] for i in sorted(prev_ids - curr_ids)]
 
     updated: List[object] = []
     for node_id in sorted(curr_ids & prev_ids):
@@ -65,13 +68,13 @@ def diff_nodes(prev: Dict[str, Dict[str, object]], curr_nodes: List[Node]) -> Di
     return {"added": added, "removed": removed, "updated": updated}
 
 
-def diff_edges(prev: Set[Tuple[str, str, str]], curr_edges: List[Edge], curr_nodes: List[Node]) -> Dict[str, List[object]]:
+def diff_edges(prev: Set[Tuple[str, str, str, str, str]], curr_edges: List[Edge], curr_nodes: List[Node]) -> Dict[str, List[object]]:
     curr = {edge_key(edge, curr_nodes) for edge in curr_edges}
     added = sorted(curr - prev)
     removed = sorted(prev - curr)
     return {
-        "added": [{"type": t, "source": s, "target": d, "distance": i} for t, s, d, i in added],
-        "removed": [{"type": t, "source": s, "target": d , "distance": i} for t, s, d, i in removed],
+        "added": [{"type": t, "source": s, "target": d, "distance": i, "spatial": j} for t, s, d, i, j in added],
+        "removed": [{"type": t, "source": s, "target": d , "distance": i, "spatial": j} for t, s, d, i, j in removed],
     }
 
 
@@ -117,7 +120,12 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
     circle_parts: List[str] = []
     for node_id, (x, y) in mapped.items():
         node = node_by_id[node_id]
-        color = "#1f77b4" if node.node_type == "Vehicle" else "#d62728"
+        if node.node_type == "Vehicle":
+            color = "#1f77b4"  # Blue
+        elif node.node_type == "Pedestrian":
+            color = "#d62728"  # Red
+        else:  # RoadSegment or other types
+            color = "#2ca02c"  # Green
         circle_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{color}" />')
         circle_parts.append(
             f'<text x="{x + 10:.1f}" y="{y - 10:.1f}" font-size="12" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
@@ -169,7 +177,10 @@ def collect_nodes(mock: bool, host: str, port: int, timeout: float, tick: int) -
                     x=node.x + math.cos(phase),
                     y=node.y + math.sin(phase),
                     z=node.z,
+                    heading=node.heading,
                     speed=node.speed,
+                    length=node.length,
+                    width=node.width,
                 )
             )
         return moved
@@ -233,7 +244,7 @@ def main() -> int:
     snap_dir.mkdir(parents=True, exist_ok=True)
 
     prev_nodes: Dict[str, Dict[str, object]] = {}
-    prev_edges: Set[Tuple[str, str, str]] = set()
+    prev_edges: Set[Tuple[str, str, str, str, str]] = set()
 
     tick = 0
     while True:
@@ -246,14 +257,33 @@ def main() -> int:
         if latest_path.exists():
             try:
                 tree = read_xml_with_retry(latest_path)
+                if tree is None:
+                    raise ET.ParseError("Latest snapshot is temporarily unavailable")
                 root = tree.getroot()
                 for edge_elem in root.findall("edges"):
+                    edge_type = edge_elem.get("type") or ""
+                    distance = edge_elem.get("distance") or ""
+                    spatial = edge_elem.get("spatial") or ""
+                    source_ref = edge_elem.get("source")
+                    target_ref = edge_elem.get("target")
+
+                    # Ignore malformed persisted edges rather than crashing stream updates.
+                    if not source_ref or not target_ref:
+                        continue
+
+                    try:
+                        source_index = int(source_ref.rsplit(".", 1)[-1])
+                        target_index = int(target_ref.rsplit(".", 1)[-1])
+                    except (ValueError, TypeError):
+                        continue
+
                     edges.append(
                         Edge(
-                            edge_type=edge_elem.get("type"),
-                            distance=edge_elem.get("distance"),
-                            source_index=int(edge_elem.get("source").split(".")[-1]),
-                            target_index=int(edge_elem.get("target").split(".")[-1]),
+                            edge_type=edge_type,
+                            distance=distance,
+                            spatial=spatial,
+                            source_index=source_index,
+                            target_index=target_index,
                         )
                     )
             except ET.ParseError:
@@ -261,9 +291,9 @@ def main() -> int:
                 edges = []
 
         # Merge new edges with existing ones, avoiding duplicates
-        existing_keys = {(e.source_index, e.target_index, e.edge_type, e.distance) for e in edges}
+        existing_keys = {(e.source_index, e.target_index, e.edge_type, e.distance, e.spatial or "") for e in edges}
         for e in new_edges:
-            key = (e.source_index, e.target_index, e.edge_type, e.distance)
+            key = (e.source_index, e.target_index, e.edge_type, e.distance, e.spatial or "")
             if key not in existing_keys:
                 edges.append(e)
                 existing_keys.add(key)

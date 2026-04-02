@@ -2,7 +2,60 @@ package queries
 
 import "http://cas782/scenegraph"
 
-// Vehicles within ~16 ft (~4.88 m) to ~25 ft (~7.62 m)
+// All values in the equations are in metres squared
+
+// Vehicles within ~4 ft (~1.22 m) → Near Collision
+pattern NearCollision(o1: Vehicle, o2: Vehicle) {
+    o1 != o2;
+
+    Node.x(o1, x1);
+    Node.y(o1, y1);
+    Node.x(o2, x2);
+    Node.y(o2, y2);
+
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) <= 1.49);
+}
+
+// Vehicles within ~4 ft to ~7 ft → Super Near
+pattern SuperNear(o1: Vehicle, o2: Vehicle) {
+    o1 != o2;
+
+    Node.x(o1, x1);
+    Node.y(o1, y1);
+    Node.x(o2, x2);
+    Node.y(o2, y2);
+
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 1.49 &&
+          ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) <= 4.55);
+}
+
+// Vehicles within ~7 ft to ~10 ft → Very Near
+pattern VeryNear(o1: Vehicle, o2: Vehicle) {
+    o1 != o2;
+
+    Node.x(o1, x1);
+    Node.y(o1, y1);
+    Node.x(o2, x2);
+    Node.y(o2, y2);
+
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 4.55 &&
+          ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) <= 9.29);
+}
+
+// Vehicles within ~10 ft to ~16 ft → Near
+pattern Near(o1: Vehicle, o2: Vehicle) {
+    o1 != o2;
+
+    Node.x(o1, x1);
+    Node.y(o1, y1);
+    Node.x(o2, x2);
+    Node.y(o2, y2);
+
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 9.29 &&
+          ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) <= 23.78);
+}
+
+// Vehicles within ~16 ft to ~25 ft → Visible
 pattern VisibleDistance(o1: Vehicle, o2: Vehicle) {
     o1 != o2;
 
@@ -11,12 +64,11 @@ pattern VisibleDistance(o1: Vehicle, o2: Vehicle) {
     Node.x(o2, x2);
     Node.y(o2, y2);
 
-    // Values are in m^2
-    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) < 58.06 &&
-    ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 23.78);
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 23.78 &&
+          ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) <= 58.06);
 }
 
-// Vehicles further than ~25 ft (~7.62 m)
+// Vehicles further than ~25 ft → RemoveEdge
 pattern RemoveEdge(o1: Vehicle, o2: Vehicle) {
     o1 != o2;
 
@@ -25,6 +77,134 @@ pattern RemoveEdge(o1: Vehicle, o2: Vehicle) {
     Node.x(o2, x2);
     Node.y(o2, y2);
 
-    // Values are in m^2
-    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) >= 58.0644);
+    check(((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2)) > 58.06);
+}
+
+// Eight directional patterns based on 45-degree increments
+// Front Right: -45° to 0°
+pattern FrontRight(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) >= -0.785 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 0);
+}
+
+// Right Front: -90° to -45°
+pattern RightFront(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -1.571 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) < -0.785);
+}
+
+// Right Rear: -135° to -90°
+pattern RightRear(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -2.356 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= -1.571);
+}
+
+// Rear Right: -180° to -135°
+pattern RearRight(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -3.14159 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= -2.356);
+}
+
+// Rear Left: 135° to 180°
+pattern RearLeft(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 2.356 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 3.14159);
+}
+
+// Left Rear: 90° to 135°
+pattern LeftRear(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 1.571 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 2.356);
+}
+
+// Left Front: 45° to 90°
+pattern LeftFront(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 0.785 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 1.571);
+}
+
+// Front Left: 0° to 45°
+pattern FrontLeft(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) >= 0 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 0.785);
+}
+
+// Vehicle positioned within a lane's center-based bounds.
+pattern VehicleOnLane(vehicle: Vehicle, lane: RoadSegment) {
+    Node.x(vehicle, vx);
+    Node.y(vehicle, vy);
+
+    Node.x(lane, lx);
+    Node.y(lane, ly);
+    Node.heading(lane, lh);
+    RoadSegment.length(lane, length);
+    RoadSegment.width(lane, width);
+
+    check(scenegraphhelper.isVehicleInLane(vx, vy, lx, ly, lh, length, width));
+}
+
+// Existing lane edge where the vehicle is no longer within lane bounds.
+pattern RemoveVehicleOnLane(vehicle: Vehicle, lane: RoadSegment) {
+    Edge.source(edge, vehicle);
+    Edge.target(edge, lane);
+    Edge.type(edge, edgeType);
+    check(edgeType == "lane");
+
+    neg find VehicleOnLane(vehicle, lane);
 }

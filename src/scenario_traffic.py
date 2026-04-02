@@ -57,7 +57,7 @@ def main():
     iteration = 0
     
     try:
-        while time.time() - start_time < 1200:  # 20 minutes
+        while time.time() - start_time < 1800:  # 30 minutes
             iteration += 1
             elapsed = time.time() - start_time
             

@@ -1,10 +1,4 @@
-// NOTE: At some point should move to event-based transforms. This may require setting up a socket interface so the Python
-// scene graph output can send notifications of model changes to VIATRA
-
 package apiqueries;
-
-import java.io.File;
-import java.io.IOException;
 
 import java.util.Collections;
 import java.util.List;
@@ -28,169 +22,354 @@ import org.eclipse.viatra.transformation.runtime.emf.transformation.batch.BatchT
 import scenegraph.Scene;
 import scenegraph.Edge;
 import scenegraph.Vehicle;
+import scenegraph.RoadSegment;
 import scenegraph.SceneGraphModelFactory;
 
-// VIATRA Query Import
+// Query Imports
+import queries.NearCollision;
+import queries.SuperNear;
+import queries.VeryNear;
+import queries.Near;
 import queries.VisibleDistance;
 import queries.RemoveEdge;
+import queries.FrontRight;
+import queries.RightFront;
+import queries.RightRear;
+import queries.RearRight;
+import queries.RearLeft;
+import queries.LeftRear;
+import queries.LeftFront;
+import queries.FrontLeft;
+import queries.VehicleOnLane;
+import queries.RemoveVehicleOnLane;
 
 public class QueryRunner implements IApplication {
 
-    private static final String MODEL_PATH = 
+    private static final String MODEL_PATH =
         "C:\\Users\\marko\\Documents\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
     private static final long POLL_INTERVAL_MS = 200;
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
+
+        BatchTransformationRuleFactory ruleFactory = new BatchTransformationRuleFactory();
+
+        // Near Collision
+        BatchTransformationRule<NearCollision.Match, NearCollision.Matcher> nearCollisionRule =
+            ruleFactory.createRule(NearCollision.instance())
+            .name("NearCollisionRule")
+            .action(match -> applyDistance(match.getO1(), match.getO2(), "NearCollision"))
+            .build();
+
+        // Super Near
+        BatchTransformationRule<SuperNear.Match, SuperNear.Matcher> superNearRule =
+            ruleFactory.createRule(SuperNear.instance())
+            .name("SuperNearRule")
+            .action(match -> applyDistance(match.getO1(), match.getO2(), "SuperNear"))
+            .build();
+
+        // Very Near
+        BatchTransformationRule<VeryNear.Match, VeryNear.Matcher> veryNearRule =
+            ruleFactory.createRule(VeryNear.instance())
+            .name("VeryNearRule")
+            .action(match -> applyDistance(match.getO1(), match.getO2(), "VeryNear"))
+            .build();
+
+        // Near
+        BatchTransformationRule<Near.Match, Near.Matcher> nearRule =
+            ruleFactory.createRule(Near.instance())
+            .name("NearRule")
+            .action(match -> applyDistance(match.getO1(), match.getO2(), "Near"))
+            .build();
+
+        // Visible
+        BatchTransformationRule<VisibleDistance.Match, VisibleDistance.Matcher> visibleRule =
+            ruleFactory.createRule(VisibleDistance.instance())
+            .name("VisibleRule")
+            .action(match -> applyDistance(match.getO1(), match.getO2(), "Visible"))
+            .build();
+
+        // Remove Edge
+        BatchTransformationRule<RemoveEdge.Match, RemoveEdge.Matcher> removeRule =
+            ruleFactory.createRule(RemoveEdge.instance())
+            .name("RemoveEdgeRule")
+            .action(match -> {
+                Vehicle v1 = match.getO1();
+                Vehicle v2 = match.getO2();
+                Scene scene = (Scene) v1.eContainer();
+
+                List<Edge> toRemove = scene.getEdges().stream()
+                    .filter(e -> "proximity".equals(e.getType()))
+                    .filter(e -> (e.getSource() == v1 && e.getTarget() == v2) ||
+                                 (e.getSource() == v2 && e.getTarget() == v1))
+                    .toList();
+
+                toRemove.forEach(e -> {
+                    scene.getEdges().remove(e);
+                    System.out.println("Removed edge: " +
+                        e.getSource().getId() + " <-> " + e.getTarget().getId());
+                });
+            })
+            .build();
+
+        // Front Right
+        BatchTransformationRule<FrontRight.Match, FrontRight.Matcher> frontRightRule =
+            ruleFactory.createRule(FrontRight.instance())
+            .name("FrontRightRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "FrontRight"))
+            .build();
+
+        // Right Front
+        BatchTransformationRule<RightFront.Match, RightFront.Matcher> rightFrontRule =
+            ruleFactory.createRule(RightFront.instance())
+            .name("RightFrontRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "RightFront"))
+            .build();
+
+        // Right Rear
+        BatchTransformationRule<RightRear.Match, RightRear.Matcher> rightRearRule =
+            ruleFactory.createRule(RightRear.instance())
+            .name("RightRearRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "RightRear"))
+            .build();
+
+        // Rear Right
+        BatchTransformationRule<RearRight.Match, RearRight.Matcher> rearRightRule =
+            ruleFactory.createRule(RearRight.instance())
+            .name("RearRightRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "RearRight"))
+            .build();
+
+        // Rear Left
+        BatchTransformationRule<RearLeft.Match, RearLeft.Matcher> rearLeftRule =
+            ruleFactory.createRule(RearLeft.instance())
+            .name("RearLeftRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "RearLeft"))
+            .build();
+
+        // Left Rear
+        BatchTransformationRule<LeftRear.Match, LeftRear.Matcher> leftRearRule =
+            ruleFactory.createRule(LeftRear.instance())
+            .name("LeftRearRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "LeftRear"))
+            .build();
+
+        // Left Front
+        BatchTransformationRule<LeftFront.Match, LeftFront.Matcher> leftFrontRule =
+            ruleFactory.createRule(LeftFront.instance())
+            .name("LeftFrontRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "LeftFront"))
+            .build();
+
+        // Front Left
+        BatchTransformationRule<FrontLeft.Match, FrontLeft.Matcher> frontLeftRule =
+            ruleFactory.createRule(FrontLeft.instance())
+            .name("FrontLeftRule")
+            .action(match -> applySpatial(match.getSource(), match.getTarget(), "FrontLeft"))
+            .build();
+
+        // Vehicle on Lane
+        BatchTransformationRule<VehicleOnLane.Match, VehicleOnLane.Matcher> vehicleOnLaneRule =
+            ruleFactory.createRule(VehicleOnLane.instance())
+            .name("VehicleOnLaneRule")
+            .action(match -> applyLane(match.getVehicle(), match.getLane()))
+            .build();
+
+        // Remove stale lane edges where the vehicle is no longer in lane bounds
+        BatchTransformationRule<RemoveVehicleOnLane.Match, RemoveVehicleOnLane.Matcher> removeVehicleOnLaneRule =
+            ruleFactory.createRule(RemoveVehicleOnLane.instance())
+            .name("RemoveVehicleOnLaneRule")
+            .action(match -> removeLane(match.getVehicle(), match.getLane()))
+            .build();
+
+        // Main loop
         while (true) {
             long start = System.nanoTime();
-            Resource resource = loadResource();
-            
+
+            ResourceSet resourceSet = new ResourceSetImpl();
+            resourceSet.getResourceFactoryRegistry()
+                .getExtensionToFactoryMap()
+                .put(Resource.Factory.Registry.DEFAULT_EXTENSION,
+                     new XMIResourceFactoryImpl());
+
+            Resource resource = loadResource(resourceSet);
+
             if (resource == null || resource.getContents().isEmpty()) {
-                System.err.println("ERROR: Resource failed to load or is empty.");
-                continue; // skip this iteration
+                continue;
             }
-            
+
             EMFScope scope = new EMFScope(resource);
             ViatraQueryEngine engine = ViatraQueryEngine.on(scope);
 
-            // 1. Define the Rule
-            BatchTransformationRule<VisibleDistance.Match, VisibleDistance.Matcher> proximityRule = 
-        	    new BatchTransformationRuleFactory().createRule(VisibleDistance.instance())
-        	    .name("VisibleDistanceRule")
-        	    .action(match -> {
-        	        Vehicle v1 = match.getO1();
-        	        Vehicle v2 = match.getO2();
+            BatchTransformation transformation =
+                BatchTransformation.forEngine(engine).build();
 
-        	        // Only proceed if source ID < target ID
-        	        if (v1.getId().compareTo(v2.getId()) >= 0) {
-        	            return; // Skip this pair
-        	        }
+            BatchTransformationStatements statements =
+                transformation.getTransformationStatements();
 
-        	        Scene scene = (Scene) v1.eContainer();
-
-        	        // Check if an edge already exists (and get it)
-        	        Edge existingEdge = scene.getEdges().stream()
-        	            .filter(e -> "proximity".equals(e.getType()))
-        	            .filter(e -> e.getSource() == v1 && e.getTarget() == v2)
-        	            .findFirst()
-        	            .orElse(null);
-
-                    if (existingEdge == null) {
-        	            // No edge exists → create one
-        	            Edge edge = SceneGraphModelFactory.eINSTANCE.createEdge();
-        	            edge.setDistance("Visible");
-        	            edge.setSource(v1);
-        	            edge.setTarget(v2);
-        	            edge.setType("proximity");
-        	            scene.getEdges().add(edge);
-        	            System.out.println("Created visible distance edge: " +
-        	                               v1.getId() + " -> " + v2.getId() + " with distance Visible");
-        	        } else {
-        	            // Edge exists → update distance if needed
-        	            if (!"Visible".equals(existingEdge.getDistance())) {
-        	                existingEdge.setDistance("Visible");
-        	                System.out.println("Updated distance for edge: " +
-        	                                   v1.getId() + " -> " + v2.getId() + " to Visible");
-        	            }
-        	        }
-        	    })
-        	    .build();
-            
-            BatchTransformationRule<RemoveEdge.Match, RemoveEdge.Matcher> removeProximityRule =
-        	    new BatchTransformationRuleFactory().createRule(RemoveEdge.instance())
-        	    .name("RemoveEdgeRule")
-        	    .action(match -> {
-        	        Vehicle v1 = match.getO1();
-        	        Vehicle v2 = match.getO2();
-        	        Scene scene = (Scene) v1.eContainer();
-
-        	        // Find the edge connecting these two vehicles (if it exists)
-        	        List<Edge> toRemove = scene.getEdges().stream()
-        	            .filter(e -> "proximity".equals(e.getType()))
-        	            .filter(e -> (e.getSource() == v1 && e.getTarget() == v2) ||
-        	                         (e.getSource() == v2 && e.getTarget() == v1))
-        	            .toList(); // Java 16+ toList()
-
-        	        // Remove any edges between far vehicles
-        	        toRemove.forEach(e -> {
-        	            scene.getEdges().remove(e);
-        	            System.out.println("Removed edge (vehicles are too far): " +
-        	                               e.getSource().getId() + " <-> " + e.getTarget().getId());
-        	        });
-        	    })
-        	    .build();
-            
-            // 2. Initialize and Fire the Transformation
-            BatchTransformation transformation = BatchTransformation.forEngine(engine).build();
-            BatchTransformationStatements statements = transformation.getTransformationStatements();
-            
             System.out.println("--- Executing Batch Transformation ---");
-            statements.fireAllCurrent(proximityRule);
-            statements.fireAllCurrent(removeProximityRule);
+
+            // Priority order
+            statements.fireAllCurrent(nearCollisionRule);
+            statements.fireAllCurrent(superNearRule);
+            statements.fireAllCurrent(veryNearRule);
+            statements.fireAllCurrent(nearRule);
+            statements.fireAllCurrent(visibleRule);
+            statements.fireAllCurrent(removeRule);
+
+            // Spatial direction rules
+            statements.fireAllCurrent(frontRightRule);
+            statements.fireAllCurrent(rightFrontRule);
+            statements.fireAllCurrent(rightRearRule);
+            statements.fireAllCurrent(rearRightRule);
+            statements.fireAllCurrent(rearLeftRule);
+            statements.fireAllCurrent(leftRearRule);
+            statements.fireAllCurrent(leftFrontRule);
+            statements.fireAllCurrent(frontLeftRule);
+            statements.fireAllCurrent(vehicleOnLaneRule);
+            statements.fireAllCurrent(removeVehicleOnLaneRule);
 
             saveResource(resource);
+
             long end = System.nanoTime();
             System.out.println("VIATRA took: " + (end - start) / 1_000_000 + " ms");
 
-            // Sleep POLL_INTERVAL_MS milliseconds before reloading
             Thread.sleep(POLL_INTERVAL_MS);
         }
     }
 
-    private Resource loadResource() {
-    	File modelFile = new File(MODEL_PATH);
-    	int maxAttempts = 40;
+    // Shared logic for all proximity rules
+    private void applyDistance(Vehicle v1, Vehicle v2, String distance) {
 
-    	for (int attempt = 0; attempt < maxAttempts; attempt++) {
-    	    try {
-    	        ResourceSet rs = new ResourceSetImpl();
-    	        rs.getResourceFactoryRegistry()
-    	          .getExtensionToFactoryMap()
-    	          .put(Resource.Factory.Registry.DEFAULT_EXTENSION,
-    	               new XMIResourceFactoryImpl());
+        if (v1.getId().compareTo(v2.getId()) >= 0) return;
 
-    	        Resource res = rs.getResource(
-    	                URI.createFileURI(MODEL_PATH), true);
+        Scene scene = (Scene) v1.eContainer();
 
-    	        return res; // success
+        Edge edge = scene.getEdges().stream()
+            .filter(e -> "proximity".equals(e.getType()))
+            .filter(e -> e.getSource() == v1 && e.getTarget() == v2)
+            .findFirst()
+            .orElse(null);
 
-    	    } catch (Exception e) {
-    	        // EMF may wrap IOExceptions inside WrappedException
-    	        Throwable cause = e.getCause();
+        if (edge == null) {
+            edge = SceneGraphModelFactory.eINSTANCE.createEdge();
+            edge.setSource(v1);
+            edge.setTarget(v2);
+            edge.setType("proximity");
+            edge.setSpatial("");
+            scene.getEdges().add(edge);
 
-    	        boolean isIOIssue =
-    	                e instanceof IOException ||
-    	                cause instanceof IOException;
+            System.out.println("Created edge: " +
+                v1.getId() + " -> " + v2.getId());
+        }
 
-    	        if (!isIOIssue) {
-    	            // Not an IO-related issue → don't retry
-    	            e.printStackTrace();
-    	            return null;
-    	        }
+        if (!distance.equals(edge.getDistance())) {
+            edge.setDistance(distance);
 
-    	        // Otherwise retry
-    	    }
-
-    	    // Retry delay
-    	    try {
-    	        Thread.sleep(20);
-    	    } catch (InterruptedException ie) {
-    	        Thread.currentThread().interrupt();
-    	        return null;
-    	    }
-    	}
-
-    	// Failed after retries
-    	return null;
+            System.out.println("Updated distance: " +
+                v1.getId() + " -> " + v2.getId() +
+                " = " + distance);
+        }
     }
-    
-    // TODO: Implement retry logic here like with loadResource()
+
+    // Shared logic for spatial direction rules
+    private void applySpatial(Vehicle source, Vehicle target, String spatial) {
+
+        if (source.getId().compareTo(target.getId()) >= 0) return;
+
+        Scene scene = (Scene) source.eContainer();
+
+        Edge edge = scene.getEdges().stream()
+            .filter(e -> "proximity".equals(e.getType()))
+            .filter(e -> e.getSource() == source && e.getTarget() == target)
+            .findFirst()
+            .orElse(null);
+
+        if (edge != null) {
+            if (!spatial.equals(edge.getSpatial())) {
+                edge.setSpatial(spatial);
+
+                System.out.println("Updated spatial: " +
+                    source.getId() + " -> " + target.getId() +
+                    " = " + spatial);
+            }
+        }
+    }
+
+    private void applyLane(Vehicle vehicle, RoadSegment lane) {
+
+        Scene scene = (Scene) vehicle.eContainer();
+
+        Edge edge = scene.getEdges().stream()
+            .filter(e -> "lane".equals(e.getType()))
+            .filter(e -> e.getSource() == vehicle && e.getTarget() == lane)
+            .findFirst()
+            .orElse(null);
+
+        if (edge == null) {
+            edge = SceneGraphModelFactory.eINSTANCE.createEdge();
+            edge.setSource(vehicle);
+            edge.setTarget(lane);
+            edge.setType("lane");
+            scene.getEdges().add(edge);
+
+            System.out.println("Created lane edge: " +
+                vehicle.getId() + " -> " + lane.getId());
+        }
+    }
+
+    private void removeLane(Vehicle vehicle, RoadSegment lane) {
+
+        Scene scene = (Scene) vehicle.eContainer();
+
+        List<Edge> toRemove = scene.getEdges().stream()
+            .filter(e -> "lane".equals(e.getType()))
+            .filter(e -> e.getSource() == vehicle && e.getTarget() == lane)
+            .toList();
+
+        toRemove.forEach(e -> {
+            scene.getEdges().remove(e);
+            System.out.println("Removed lane edge: " +
+                vehicle.getId() + " -> " + lane.getId());
+        });
+    }
+
+    private Resource loadResource(ResourceSet rs) {
+        int maxAttempts = 40;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                return rs.getResource(
+                    URI.createFileURI(MODEL_PATH), true);
+            } catch (Exception e) {}
+
+            try { Thread.sleep(10); }
+            catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
+    }
+
     private void saveResource(Resource resource) {
-        try {
-            resource.save(Collections.emptyMap());
-            System.out.println("Model updated and saved.");
-        } catch (IOException e) { }
+        int maxAttempts = 40;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                resource.save(Collections.emptyMap());
+                System.out.println("Model updated and saved.");
+                return;
+            } catch (Exception e) {}
+
+            try { Thread.sleep(10); }
+            catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+
+        System.err.println("ERROR: Failed to save resource.");
     }
 
     @Override
