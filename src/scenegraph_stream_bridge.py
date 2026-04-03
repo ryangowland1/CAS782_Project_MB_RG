@@ -102,66 +102,107 @@ def to_view_space(nodes: List[Node], width: int = 960, height: int = 540) -> Dic
         mapped[node.external_id] = (vx, vy)
     return mapped
 
+def compute_view_scale(nodes: List[Node], width: int = 960, height: int = 540) -> float:
+    """Compute world-to-view scale factor (px per meter)."""
+    if not nodes:
+        return 1.0
+
+    xs = [n.x for n in nodes]
+    ys = [n.y for n in nodes]
+    span_x = max(max(xs) - min(xs), 1.0)
+    span_y = max(max(ys) - min(ys), 1.0)
+
+    margin = 40.0
+    scale_x = (width - 2 * margin) / span_x
+    scale_y = (height - 2 * margin) / span_y
+    return min(scale_x, scale_y)
+
 
 def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge], tick: int) -> None:
-    mapped = to_view_space(nodes)
-    node_by_id = {n.external_id: n for n in nodes}
+        mapped = to_view_space(nodes)
+        view_scale = compute_view_scale(nodes)
+        node_by_id = {n.external_id: n for n in nodes}
 
-    line_parts: List[str] = []
-    for edge in edges:
-        src = nodes[edge.source_index].external_id
-        dst = nodes[edge.target_index].external_id
-        x1, y1 = mapped[src]
-        x2, y2 = mapped[dst]
-        line_parts.append(
-            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#5d6d7e" stroke-width="1.5" />'
-        )
+        lane_parts: List[str] = []
+        for node in nodes:
+                if node.node_type != "RoadSegment":
+                        continue
+                if node.length is None or node.width is None:
+                        continue
 
-    circle_parts: List[str] = []
-    for node_id, (x, y) in mapped.items():
-        node = node_by_id[node_id]
-        if node.node_type == "Vehicle":
-            color = "#1f77b4"  # Blue
-        elif node.node_type == "Pedestrian":
-            color = "#d62728"  # Red
-        else:  # RoadSegment or other types
-            color = "#2ca02c"  # Green
-        circle_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{color}" />')
-        circle_parts.append(
-            f'<text x="{x + 10:.1f}" y="{y - 10:.1f}" font-size="12" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
-        )
+                center = mapped.get(node.external_id)
+                if center is None:
+                        continue
 
-    html = f"""<!doctype html>
+                cx, cy = center
+                lane_len_px = max(node.length * view_scale, 6.0)
+                lane_width_px = max(node.width * view_scale, 2.0)
+                x = cx - lane_len_px / 2.0
+                y = cy - lane_width_px / 2.0
+                angle_deg = -math.degrees(node.heading)
+
+                lane_parts.append(
+                        f'<rect x="{x:.1f}" y="{y:.1f}" width="{lane_len_px:.1f}" height="{lane_width_px:.1f}" '
+                        f'rx="1.5" fill="#81c784" fill-opacity="0.28" stroke="#2e7d32" stroke-width="0.9" '
+                        f'transform="rotate({angle_deg:.2f} {cx:.1f} {cy:.1f})" />'
+                )
+
+        line_parts: List[str] = []
+        for edge in edges:
+                src = nodes[edge.source_index].external_id
+                dst = nodes[edge.target_index].external_id
+                x1, y1 = mapped[src]
+                x2, y2 = mapped[dst]
+                line_parts.append(
+                        f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#5d6d7e" stroke-width="1.5" />'
+                )
+
+        circle_parts: List[str] = []
+        for node_id, (x, y) in mapped.items():
+                node = node_by_id[node_id]
+                if node.node_type == "Vehicle":
+                        color = "#1f77b4"  # Blue
+                elif node.node_type == "Pedestrian":
+                        color = "#d62728"  # Red
+                else:  # RoadSegment or other types
+                        color = "#2ca02c"  # Green
+                circle_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{color}" />')
+                circle_parts.append(
+                        f'<text x="{x + 10:.1f}" y="{y - 10:.1f}" font-size="12" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
+                )
+
+        html = f"""<!doctype html>
 <html>
 <head>
-  <meta charset=\"utf-8\" />
-  <meta http-equiv=\"refresh\" content=\"0.2\" />
-  <title>Scene Graph Live View</title>
-  <style>
-    body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; margin: 0; }}
-    .wrap {{ max-width: 1000px; margin: 24px auto; background: white; border: 1px solid #d0d7de; border-radius: 10px; }}
-    .head {{ padding: 14px 16px; border-bottom: 1px solid #e5e7eb; }}
-    .meta {{ color: #3f4b5b; font-size: 14px; }}
-    svg {{ display: block; width: 100%; height: auto; background: #fcfdff; }}
-  </style>
+    <meta charset=\"utf-8\" />
+    <meta http-equiv=\"refresh\" content=\"0.2\" />
+    <title>Scene Graph Live View</title>
+    <style>
+        body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; margin: 0; }}
+        .wrap {{ max-width: 1000px; margin: 24px auto; background: white; border: 1px solid #d0d7de; border-radius: 10px; }}
+        .head {{ padding: 14px 16px; border-bottom: 1px solid #e5e7eb; }}
+        .meta {{ color: #3f4b5b; font-size: 14px; }}
+        svg {{ display: block; width: 100%; height: auto; background: #fcfdff; }}
+    </style>
 </head>
 <body>
-  <div class=\"wrap\">
-    <div class=\"head\">
-      <strong>CARLA Scene Graph Live View</strong>
-      <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 200ms</div>
+    <div class=\"wrap\">
+        <div class=\"head\">
+            <strong>CARLA Scene Graph Live View</strong>
+            <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 200ms</div>
+        </div>
+        <svg viewBox=\"0 0 960 540\" xmlns=\"http://www.w3.org/2000/svg\">
+            {''.join(lane_parts)}
+            {''.join(line_parts)}
+            {''.join(circle_parts)}
+        </svg>
     </div>
-    <svg viewBox=\"0 0 960 540\" xmlns=\"http://www.w3.org/2000/svg\">
-      {''.join(line_parts)}
-      {''.join(circle_parts)}
-    </svg>
-  </div>
 </body>
 </html>
 """
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(html, encoding="utf-8")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(html, encoding="utf-8")
 
 
 def collect_nodes(mock: bool, host: str, port: int, timeout: float, tick: int) -> List[Node]:

@@ -54,10 +54,10 @@ Start the streaming bridge (updates scene graph every second):
 
 ```powershell
 # Mock mode (no CARLA needed)
-powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Mock -Interval 1.0
+powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Mock -Interval 0.2
 
 # Live CARLA mode (requires server running)
-powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Interval 1.0
+powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Interval 0.2
 ```
 
 View live updates:
@@ -162,21 +162,6 @@ Get-Content .\data\demo.xmi
 
 # 3. Import live.xmi into Eclipse + VIATRA
 # 4. Run queries to analyze the current scene
-```
-
-### Streaming Example
-
-```powershell
-# Terminal 1: Start CARLA (if using real mode)
-.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed
-
-# Terminal 2: Start streaming bridge
-powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Interval 1.0
-
-# Terminal 3: View live updates
-powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
-
-# For VIATRA: Configure incremental query engine to watch data/stream/*.xmi files
 ```
 
 ## Next Steps

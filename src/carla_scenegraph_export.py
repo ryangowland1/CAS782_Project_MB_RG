@@ -140,7 +140,7 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
         carla_map = world.get_map()
         topology = carla_map.get_topology()
 
-        # Track lane extent using OpenDRIVE s-coordinates
+        # Track lane geometry from topology segments.
         lane_metrics = {}
         for start_waypoint, end_waypoint in topology:
             # Restrict to strict driving lanes
@@ -151,19 +151,54 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
             road_id = start_waypoint.road_id
             lane_key = (road_id, lane_id)
 
+            start_loc = start_waypoint.transform.location
+            end_loc = end_waypoint.transform.location
+            s_start = float(start_waypoint.s)
+            s_end = float(end_waypoint.s)
+            segment_length = _waypoint_segment_length(start_waypoint, end_waypoint)
+            if segment_length <= 0.0:
+                continue
+
+            # CARLA topology may contain repeated entries; use a rounded geometric key to de-duplicate.
+            segment_key = (
+                start_waypoint.road_id,
+                start_waypoint.lane_id,
+                start_waypoint.section_id,
+                round(s_start, 3),
+                round(s_end, 3),
+                round(start_loc.x, 2),
+                round(start_loc.y, 2),
+                round(end_loc.x, 2),
+                round(end_loc.y, 2),
+            )
+
             if lane_key not in lane_metrics:
                 lane_metrics[lane_key] = {
                     "waypoint": start_waypoint,
-                    "s_min": float(start_waypoint.s),
-                    "s_max": float(start_waypoint.s),
                     "width": float(start_waypoint.lane_width),
+                    "length_sum": 0.0,
+                    "segments_seen": set(),
+                    "center_x_sum": 0.0,
+                    "center_y_sum": 0.0,
+                    "center_z_sum": 0.0,
+                    "dir_x_sum": 0.0,
+                    "dir_y_sum": 0.0,
+                    "sample_points": [],
                 }
-            
-            # Update s extent to capture full lane span
-            s_start = float(start_waypoint.s)
-            s_end = float(end_waypoint.s)
-            lane_metrics[lane_key]["s_min"] = min(lane_metrics[lane_key]["s_min"], s_start, s_end)
-            lane_metrics[lane_key]["s_max"] = max(lane_metrics[lane_key]["s_max"], s_start, s_end)
+
+            metrics = lane_metrics[lane_key]
+            if segment_key in metrics["segments_seen"]:
+                continue
+
+            metrics["segments_seen"].add(segment_key)
+            metrics["length_sum"] += segment_length
+            metrics["center_x_sum"] += (start_loc.x + end_loc.x) * 0.5 * segment_length
+            metrics["center_y_sum"] += (start_loc.y + end_loc.y) * 0.5 * segment_length
+            metrics["center_z_sum"] += (start_loc.z + end_loc.z) * 0.5 * segment_length
+            metrics["dir_x_sum"] += (end_loc.x - start_loc.x) * segment_length
+            metrics["dir_y_sum"] += (end_loc.y - start_loc.y) * segment_length
+            metrics["sample_points"].append((start_loc.x, start_loc.y, start_loc.z))
+            metrics["sample_points"].append((end_loc.x, end_loc.y, end_loc.z))
             lane_metrics[lane_key]["width"] = max(
                 lane_metrics[lane_key]["width"],
                 float(start_waypoint.lane_width),
@@ -172,20 +207,43 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
         # Create RoadSegment nodes for each unique lane
         for (road_id, lane_id), metrics in lane_metrics.items():
             waypoint = metrics["waypoint"]
-            # Lane length is the span of s-coordinates
-            lane_length = metrics["s_max"] - metrics["s_min"]
-            if lane_length < 0.1:  # Skip degenerate lanes
+            accumulated_length = float(metrics["length_sum"])
+            if accumulated_length < 0.1:  # Skip degenerate lanes
                 continue
+
+            center_x = metrics["center_x_sum"] / accumulated_length
+            center_y = metrics["center_y_sum"] / accumulated_length
+            center_z = metrics["center_z_sum"] / accumulated_length
+            if abs(metrics["dir_x_sum"]) > 1e-4 or abs(metrics["dir_y_sum"]) > 1e-4:
+                heading_rad = math.atan2(metrics["dir_y_sum"], metrics["dir_x_sum"])
+            else:
+                heading_rad = math.radians(waypoint.transform.rotation.yaw)
+
+            # For a straight rectangular lane model, use axis-projected extent rather than arc length.
+            axis_x = math.cos(heading_rad)
+            axis_y = math.sin(heading_rad)
+            projections = []
+            for px, py, _pz in metrics["sample_points"]:
+                projections.append((px - center_x) * axis_x + (py - center_y) * axis_y)
+
+            if projections:
+                lane_length = max(projections) - min(projections)
+            else:
+                lane_length = accumulated_length
+
+            if lane_length < 0.1:
+                lane_length = accumulated_length
+
             external_id = f"lane_{road_id}_{lane_id}"
             nodes.append(
                 Node(
                     node_type="RoadSegment",
                     external_id=external_id,
-                    x=waypoint.transform.location.x,
-                    y=waypoint.transform.location.y,
-                    z=waypoint.transform.location.z,
-                    heading=math.radians(waypoint.transform.rotation.yaw),
-                    length=float(lane_length),
+                    x=float(center_x),
+                    y=float(center_y),
+                    z=float(center_z),
+                    heading=float(heading_rad),
+                    length=lane_length,
                     width=float(metrics["width"]),
                 )
             )

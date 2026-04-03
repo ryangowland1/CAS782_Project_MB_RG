@@ -54,15 +54,11 @@ Once setup is complete, explore these guides:
 - `PREREQUISITES.md` — System requirements & one-time setup
 - `SETUP.ps1` — Automated environment setup (run once after clone)
 - `QUICKSTART.md` — First-time usage guide
-- `STREAM_REFERENCE.md` — Location of all stream outputs
-- `VIATRA_STREAM_GUIDE.md` — Eclipse & VIATRA integration
 
 **Source Code:**
 - `src/carla_scenegraph_export.py` — Export CARLA state as XMI scene graphs
 - `src/scenegraph_stream_bridge.py` — Continuous stream producer (XMI + JSONL)
 - `src/scenario_live_moving.py` — Demo: vehicles with autopilot
-- `src/demo_carla_client.py` — Demo: basic CARLA API usage
-- `src/viatra_dummy_live_consumer.py` — Demo: consume live event stream
 
 **Metamodel & Queries:**
 - `model/SceneGraph.ecore` — EMF metamodel (Vehicle, Pedestrian, Node, Edge)
@@ -70,9 +66,7 @@ Once setup is complete, explore these guides:
 
 **Scale Simulation & Utilities:**
 - `scripts/bootstrap_windows.ps1` — Legacy prerequisite checker
-- `scripts/start_carla_server.ps1` — Helper to launch CARLA
 - `scripts/run_scenegraph_stream.ps1` — Start scene graph stream
-- `scripts/dev_up.ps1` — One-command dev startup
 - `scripts/open_live_view.ps1` — Open live graph visualization
 
 **Data & Outputs:**
@@ -135,13 +129,6 @@ All outputs are written to `data/stream/` directory:
 - [PREREQUISITES.md](PREREQUISITES.md) — System setup requirements
 - [SETUP.ps1](SETUP.ps1) — Automated installation script
 - [QUICKSTART.md](QUICKSTART.md) — First-time usage guide
-- [STREAM_REFERENCE.md](STREAM_REFERENCE.md) — Live stream files reference
-- [VIATRA_STREAM_GUIDE.md](VIATRA_STREAM_GUIDE.md) — Eclipse integration walkthrough
-
-**Detailed Technical Docs:**
-- [docs/architecture.md](docs/architecture.md) — Full system architecture
-- [docs/extractor_usage.md](docs/extractor_usage.md) — Scene extraction API
-- [docs/viatra_stream_integration.md](docs/viatra_stream_integration.md) — VIATRA patterns & queries
 
 **External Resources:**
 - [CARLA 0.9.16 Docs](https://carla.readthedocs.io/en/0.9.16/) — Simulator reference
@@ -158,11 +145,6 @@ All outputs are written to `data/stream/` directory:
 
 **For Usage Questions:**
 - See [QUICKSTART.md](QUICKSTART.md) for common workflows
-- See [STREAM_REFERENCE.md](STREAM_REFERENCE.md) for file locations
-
-**For VIATRA Integration:**
-- See [VIATRA_STREAM_GUIDE.md](VIATRA_STREAM_GUIDE.md) for step-by-step Eclipse setup
-- See [docs/viatra_stream_integration.md](docs/viatra_stream_integration.md) for advanced patterns
 
 ---
 
