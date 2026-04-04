@@ -1,7 +1,7 @@
 param(
     [switch]$Mock,
     [int]$Ticks = 0,
-    [double]$Interval = 1.0,
+    [double]$Interval = 0.1,
     [string]$CarlaAddress = "127.0.0.1",
     [int]$Port = 2000,
     [string]$OutDir = ".\data\stream"

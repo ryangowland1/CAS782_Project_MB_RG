@@ -81,7 +81,7 @@ pattern RemoveEdge(o1: Vehicle, o2: Vehicle) {
 }
 
 // Eight directional patterns based on 45-degree increments
-// Front Right: -45° to 0°
+// Front Right: 0° to 45°
 pattern FrontRight(source: Vehicle, target: Vehicle) {
     source != target;
 
@@ -91,76 +91,11 @@ pattern FrontRight(source: Vehicle, target: Vehicle) {
     Node.x(target, tx);
     Node.y(target, ty);
 
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) >= -0.785 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 0);
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) >= 0 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 0.785);
 }
 
-// Right Front: -90° to -45°
+// Right Front: 45° to 90°
 pattern RightFront(source: Vehicle, target: Vehicle) {
-    source != target;
-
-    Node.x(source, sx);
-    Node.y(source, sy);
-    Node.heading(source, sh);
-    Node.x(target, tx);
-    Node.y(target, ty);
-
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -1.571 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) < -0.785);
-}
-
-// Right Rear: -135° to -90°
-pattern RightRear(source: Vehicle, target: Vehicle) {
-    source != target;
-
-    Node.x(source, sx);
-    Node.y(source, sy);
-    Node.heading(source, sh);
-    Node.x(target, tx);
-    Node.y(target, ty);
-
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -2.356 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= -1.571);
-}
-
-// Rear Right: -180° to -135°
-pattern RearRight(source: Vehicle, target: Vehicle) {
-    source != target;
-
-    Node.x(source, sx);
-    Node.y(source, sy);
-    Node.heading(source, sh);
-    Node.x(target, tx);
-    Node.y(target, ty);
-
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -3.14159 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= -2.356);
-}
-
-// Rear Left: 135° to 180°
-pattern RearLeft(source: Vehicle, target: Vehicle) {
-    source != target;
-
-    Node.x(source, sx);
-    Node.y(source, sy);
-    Node.heading(source, sh);
-    Node.x(target, tx);
-    Node.y(target, ty);
-
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 2.356 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 3.14159);
-}
-
-// Left Rear: 90° to 135°
-pattern LeftRear(source: Vehicle, target: Vehicle) {
-    source != target;
-
-    Node.x(source, sx);
-    Node.y(source, sy);
-    Node.heading(source, sh);
-    Node.x(target, tx);
-    Node.y(target, ty);
-
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 1.571 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 2.356);
-}
-
-// Left Front: 45° to 90°
-pattern LeftFront(source: Vehicle, target: Vehicle) {
     source != target;
 
     Node.x(source, sx);
@@ -172,7 +107,72 @@ pattern LeftFront(source: Vehicle, target: Vehicle) {
     check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 0.785 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 1.571);
 }
 
-// Front Left: 0° to 45°
+// Right Rear: 90° to 135°
+pattern RightRear(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 1.571 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 2.356);
+}
+
+// Rear Right: 135° to 180°
+pattern RearRight(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > 2.356 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 3.14159);
+}
+
+// Rear Left: -180° to -135°
+pattern RearLeft(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -3.14159 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= -2.356);
+}
+
+// Left Rear: -135° to -90°
+pattern LeftRear(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -2.356 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= -1.571);
+}
+
+// Left Front: -90° to -45°
+pattern LeftFront(source: Vehicle, target: Vehicle) {
+    source != target;
+
+    Node.x(source, sx);
+    Node.y(source, sy);
+    Node.heading(source, sh);
+    Node.x(target, tx);
+    Node.y(target, ty);
+
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) > -1.571 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) < -0.785);
+}
+
+// Front Left: -45° to 0°
 pattern FrontLeft(source: Vehicle, target: Vehicle) {
     source != target;
 
@@ -182,7 +182,7 @@ pattern FrontLeft(source: Vehicle, target: Vehicle) {
     Node.x(target, tx);
     Node.y(target, ty);
 
-    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) >= 0 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 0.785);
+    check(scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) >= -0.785 && scenegraphhelper.calculateAngle(sx, sy, sh, tx, ty) <= 0);
 }
 
 // Vehicle positioned within a lane's center-based bounds.

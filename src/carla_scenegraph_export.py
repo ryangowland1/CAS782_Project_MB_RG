@@ -68,18 +68,14 @@ def _waypoint_segment_length(start_waypoint, end_waypoint) -> float:
 
 
 def collect_mock_nodes() -> List[Node]:
-    nodes = [
+    return [
         Node("Vehicle", "veh-ego", 0.0, 0.0, 0.0, 0.0, speed=8.0),
         Node("Vehicle", "veh-1", 10.0, 0.0, 0.0, 1.57, speed=12.5),
         Node("Pedestrian", "ped-1", 11.0, 1.0, 0.0, 0.785),
-    ]
-    # Add mock lanes
-    nodes.extend([
         Node("RoadSegment", "lane-1", 0.0, -2.0, 0.0, 0.0, length=40.0, width=3.5),
         Node("RoadSegment", "lane-2", 0.0, 2.0, 0.0, 0.0, length=40.0, width=3.5),
         Node("RoadSegment", "lane-3", 10.0, -2.0, 0.0, 1.57, length=30.0, width=3.5),
-    ])
-    return nodes
+    ]
 
 
 def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
@@ -105,28 +101,25 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
         heading = math.radians(transform.rotation.yaw)
 
         if actor_type.startswith("vehicle."):
-            nodes.append(
-                Node(
-                    node_type="Vehicle",
-                    external_id=str(actor.id),
-                    x=transform.location.x,
-                    y=transform.location.y,
-                    z=transform.location.z,
-                    heading=heading,
-                    speed=speed,
-                )
-            )
+            node_type = "Vehicle"
+            node_speed = speed
         elif actor_type.startswith("walker.pedestrian."):
-            nodes.append(
-                Node(
-                    node_type="Pedestrian",
-                    external_id=str(actor.id),
-                    x=transform.location.x,
-                    y=transform.location.y,
-                    z=transform.location.z,
-                    heading=heading,
-                )
+            node_type = "Pedestrian"
+            node_speed = None
+        else:
+            continue
+
+        nodes.append(
+            Node(
+                node_type=node_type,
+                external_id=str(actor.id),
+                x=transform.location.x,
+                y=transform.location.y,
+                z=transform.location.z,
+                heading=heading,
+                speed=node_speed,
             )
+        )
     
     # Collect lanes as road segments
     try:
@@ -192,10 +185,7 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
             metrics["dir_y_sum"] += (end_loc.y - start_loc.y) * segment_length
             metrics["sample_points"].append((start_loc.x, start_loc.y, start_loc.z))
             metrics["sample_points"].append((end_loc.x, end_loc.y, end_loc.z))
-            lane_metrics[lane_key]["width"] = max(
-                lane_metrics[lane_key]["width"],
-                float(start_waypoint.lane_width),
-            )
+            metrics["width"] = max(metrics["width"], float(start_waypoint.lane_width))
 
         # Create RoadSegment nodes for each unique lane
         for (road_id, lane_id), metrics in lane_metrics.items():
@@ -215,9 +205,10 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
             # For a straight rectangular lane model, use axis-projected extent rather than arc length.
             axis_x = math.cos(heading_rad)
             axis_y = math.sin(heading_rad)
-            projections = []
-            for px, py, _pz in metrics["sample_points"]:
-                projections.append((px - center_x) * axis_x + (py - center_y) * axis_y)
+            projections = [
+                (px - center_x) * axis_x + (py - center_y) * axis_y
+                for px, py, _pz in metrics["sample_points"]
+            ]
 
             if projections:
                 lane_length = max(projections) - min(projections)
@@ -258,16 +249,13 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
     :param delay: Delay between retries in seconds
     :return: True if successful, False otherwise
     """
-    last_exception = None
-
     for attempt in range(retries):
         try:
             with open(path, 'wb') as f:
                 try:
                     # Exclusive non-blocking lock (Java tryLock equivalent)
                     portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-                except portalocker.exceptions.LockException as e:
-                    last_exception = e
+                except portalocker.exceptions.LockException:
                     if attempt == retries - 1:
                         print(f"File is locked after {retries} attempts: {path}")
                         return False
@@ -281,8 +269,7 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
                 finally:
                     portalocker.unlock(f)
 
-        except Exception as e:
-            last_exception = e
+        except Exception:
             if attempt == retries - 1:
                 raise
             time.sleep(delay)

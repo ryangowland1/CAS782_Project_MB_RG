@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Continuously export CARLA scene graphs as XMI snapshots + JSONL change events.
 
 Outputs:
@@ -51,6 +51,13 @@ def edge_key(edge: Edge, nodes: List[Node]) -> Tuple[str, str, str, str, str]:
     if src > dst:
         src, dst = dst, src
     return (edge.edge_type, src, dst, edge.distance, edge.spatial)
+
+
+def iter_valid_edge_endpoints(edges: List[Edge], nodes: List[Node]):
+    for edge in edges:
+        if not (0 <= edge.source_index < len(nodes) and 0 <= edge.target_index < len(nodes)):
+            continue
+        yield edge, nodes[edge.source_index].external_id, nodes[edge.target_index].external_id
 
 
 def diff_nodes(prev: Dict[str, Dict[str, object]], curr_nodes: List[Node]) -> Dict[str, List[object]]:
@@ -156,13 +163,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 
     # Keep only lane nodes that participate in at least one edge.
     connected_lane_ids: Set[str] = set()
-    for edge in edges:
-        if edge.source_index < 0 or edge.target_index < 0:
-            continue
-        if edge.source_index >= len(nodes) or edge.target_index >= len(nodes):
-            continue
-        src_id = nodes[edge.source_index].external_id
-        dst_id = nodes[edge.target_index].external_id
+    for _edge, src_id, dst_id in iter_valid_edge_endpoints(edges, nodes):
         src_node = node_by_id.get(src_id)
         dst_node = node_by_id.get(dst_id)
         if src_node is not None and src_node.node_type == "RoadSegment":
@@ -181,13 +182,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
     line_parts: List[str] = []
     edge_text_parts: List[str] = []
     visible_edge_count = 0
-    for edge in edges:
-        if edge.source_index < 0 or edge.target_index < 0:
-            continue
-        if edge.source_index >= len(nodes) or edge.target_index >= len(nodes):
-            continue
-        src = nodes[edge.source_index].external_id
-        dst = nodes[edge.target_index].external_id
+    for edge, src, dst in iter_valid_edge_endpoints(edges, nodes):
         if src not in visible_node_ids or dst not in visible_node_ids:
             continue
         x1, y1 = mapped[src]
@@ -228,22 +223,16 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
         visible_edge_count += 1
 
     circle_parts: List[str] = []
+    node_colors = {"Vehicle": "#1f77b4", "Pedestrian": "#d62728"}
     for node in visible_nodes:
         node_id = node.external_id
         x, y = mapped[node_id]
-        if node.node_type == "Vehicle":
-            color = "#1f77b4"  # Blue
-        elif node.node_type == "Pedestrian":
-            color = "#d62728"  # Red
-        else:  # RoadSegment or other types
-            color = "#2ca02c"  # Green
-
-        if node.node_type == "Vehicle":
-            circle_parts.append(
-                f'<rect x="{x - 9:.1f}" y="{y - 15:.1f}" width="18" height="30" rx="4" fill="{color}" />'
-            )
-        else:
-            circle_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="14" fill="{color}" />')
+        color = node_colors.get(node.node_type, "#2ca02c")
+        circle_parts.append(
+            f'<rect x="{x - 9:.1f}" y="{y - 15:.1f}" width="18" height="30" rx="4" fill="{color}" />'
+            if node.node_type == "Vehicle"
+            else f'<circle cx="{x:.1f}" cy="{y:.1f}" r="14" fill="{color}" />'
+        )
 
         circle_parts.append(
             f'<text x="{x + 26:.1f}" y="{y - 26:.1f}" font-size="34" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
@@ -254,7 +243,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 <head>
     <meta charset=\"utf-8\" />
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <meta http-equiv=\"refresh\" content=\"0.2\" />
+    <meta http-equiv=\"refresh\" content=\"0.1\" />
     <title>Scene Graph Live View</title>
     <style>
         html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; }}
@@ -280,7 +269,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
     <div class=\"wrap\">
         <div class=\"head\">
             <strong>CARLA Scene Graph Live View</strong>
-            <div class=\"meta\">Tick: {tick} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count} | Auto-refresh: 200ms</div>
+            <div class=\"meta\">Tick: {tick} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count} | Auto-refresh: 100ms</div>
         </div>
         <svg viewBox=\"0 0 1600 1000\" preserveAspectRatio=\"none\" xmlns=\"http://www.w3.org/2000/svg\">
             {''.join(line_parts)}
@@ -299,23 +288,20 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 def collect_nodes(mock: bool, host: str, port: int, timeout: float, tick: int) -> List[Node]:
     if mock:
         base = collect_mock_nodes()
-        moved: List[Node] = []
-        for idx, node in enumerate(base):
-            phase = tick * 0.2 + idx
-            moved.append(
-                Node(
-                    node_type=node.node_type,
-                    external_id=node.external_id,
-                    x=node.x + math.cos(phase),
-                    y=node.y + math.sin(phase),
-                    z=node.z,
-                    heading=node.heading,
-                    speed=node.speed,
-                    length=node.length,
-                    width=node.width,
-                )
+        return [
+            Node(
+                node_type=node.node_type,
+                external_id=node.external_id,
+                x=node.x + math.cos(tick * 0.5 + idx),
+                y=node.y + math.sin(tick * 0.5 + idx),
+                z=node.z,
+                heading=node.heading,
+                speed=node.speed,
+                length=node.length,
+                width=node.width,
             )
-        return moved
+            for idx, node in enumerate(base)
+        ]
 
     return collect_carla_nodes(host, port, timeout)
 
@@ -324,7 +310,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stream CARLA scene graphs to XMI + JSONL")
     parser.add_argument("--out-dir", default="data/stream", help="Output stream directory")
     parser.add_argument("--scene-name", default="CARLA_Stream", help="Scene name for XMI files")
-    parser.add_argument("--interval", type=float, default=1.0, help="Seconds between snapshots")
+    parser.add_argument("--interval", type=float, default=0.1, help="Seconds between snapshots")
     parser.add_argument("--ticks", type=int, default=0, help="Number of ticks (0 = infinite)")
     parser.add_argument("--carla-address", default="127.0.0.1", help="CARLA host")
     parser.add_argument("--port", type=int, default=2000, help="CARLA RPC port")
@@ -334,37 +320,33 @@ def parse_args() -> argparse.Namespace:
 
 
 def read_xml_with_retry(path, retries=5, delay=0.05):
-    last_exception = None
-
     for attempt in range(retries):
         try:
             with open(path, "rb") as f:
-                if portalocker is not None:
-                    try:
-                        # Match Java tryLock(): exclusive + non-blocking
-                        portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-                    except portalocker.exceptions.LockException as e:
-                        last_exception = e
-                        if attempt == retries - 1:
-                            print(f"File is locked after {retries} attempts: {path}")
-                            return None
-                        time.sleep(delay)
-                        continue
+                if portalocker is None:
+                    return ET.parse(f)
 
-                    try:
-                        return ET.parse(f)
-                    finally:
-                        portalocker.unlock(f)
+                try:
+                    # Match Java tryLock(): exclusive + non-blocking
+                    portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                except portalocker.exceptions.LockException:
+                    if attempt == retries - 1:
+                        print(f"File is locked after {retries} attempts: {path}")
+                        return None
+                    time.sleep(delay)
+                    continue
 
-                return ET.parse(f)
+                try:
+                    return ET.parse(f)
+                finally:
+                    portalocker.unlock(f)
 
-        except Exception as e:
-            last_exception = e
+        except Exception:
             if attempt == retries - 1:
                 raise
             time.sleep(delay)
 
-    raise Exception("Unexpected failure") from last_exception
+    raise RuntimeError("Unexpected XML read retry state")
 
 
 def main() -> int:

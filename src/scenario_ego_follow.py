@@ -38,6 +38,11 @@ def clamp(value, minimum, maximum):
     return max(minimum, min(maximum, value))
 
 
+def limit_steer_rate(control, previous_steer, max_delta):
+    control.steer = clamp(control.steer, previous_steer - max_delta, previous_steer + max_delta)
+    return control
+
+
 def spawn_behind(transform, distance_meters):
     forward_vector = transform.get_forward_vector()
     location = carla.Location(
@@ -111,6 +116,9 @@ def smooth_transform(current_transform, target_transform, alpha):
             roll=lerp_angle_deg(current_transform.rotation.roll, target_transform.rotation.roll, alpha),
         ),
     )
+
+
+CONTROL_DT = 0.1
 
 
 def pace_loop_with_camera_updates(
@@ -204,11 +212,11 @@ def main():
     lead_vehicle.set_autopilot(False)
     lead_controller = VehiclePIDController(
         lead_vehicle,
-        args_lateral={"K_P": 1.5, "K_I": 0.02, "K_D": 0.15, "dt": 0.05},
-        args_longitudinal={"K_P": 1.25, "K_I": 0.05, "K_D": 0.16, "dt": 0.05},
+        args_lateral={"K_P": 0.80, "K_I": 0.0, "K_D": 0.24, "dt": CONTROL_DT},
+        args_longitudinal={"K_P": 1.25, "K_I": 0.05, "K_D": 0.16, "dt": CONTROL_DT},
         max_throttle=1.00,
         max_brake=0.9,
-        max_steering=0.65,
+        max_steering=0.45,
     )
     world_map = world.get_map()
     assert lead_spawn is not None
@@ -229,11 +237,11 @@ def main():
     assert ego_spawn is not None
     ego_controller = VehiclePIDController(
         ego_vehicle,
-        args_lateral={"K_P": 1.35, "K_I": 0.02, "K_D": 0.20, "dt": 0.05},
-        args_longitudinal={"K_P": 1.10, "K_I": 0.06, "K_D": 0.22, "dt": 0.05},
+        args_lateral={"K_P": 0.72, "K_I": 0.0, "K_D": 0.28, "dt": CONTROL_DT},
+        args_longitudinal={"K_P": 1.10, "K_I": 0.06, "K_D": 0.22, "dt": CONTROL_DT},
         max_throttle=0.95,
         max_brake=0.75,
-        max_steering=0.72,
+        max_steering=0.45,
     )
     print("  Following distance target: random 5.0-12.0 m")
     print("  Camera target: ego vehicle (1st spawned)")
@@ -269,22 +277,26 @@ def main():
         start_time = time.time()
         status_interval = 2.0
         next_status_time = start_time
-        camera_smoothing = 0.2
-        sim_dt = 0.2
+        camera_smoothing = 0.5
+        sim_dt = CONTROL_DT
         lead_cruise_speed_kmh = 24.0
         lead_speed_variation_kmh = 0.0
         next_lead_speed_change_time = start_time
         lead_brake_until_time = 0.0
         next_lead_brake_window_time = start_time + random.uniform(4.0, 8.0)
-        follow_distance = random.uniform(5.0, 12.0)
+        follow_distance = random.uniform(4.0, 11.0)
+        follow_distance_speed_gain = 2.0
         next_follow_distance_change_time = start_time + random.uniform(2.0, 5.0)
+        lead_prev_steer = 0.0
+        ego_prev_steer = 0.0
+        steer_delta_limit = 0.06
         
         while time.time() - start_time < 1800:
             loop_wall_start = time.perf_counter()
             loop_now = time.time()
 
             if loop_now >= next_follow_distance_change_time:
-                follow_distance = random.uniform(5.0, 12.0)
+                follow_distance = random.uniform(4.0, 11.0)
                 next_follow_distance_change_time = loop_now + random.uniform(2.0, 5.0)
 
             if loop_now >= next_lead_speed_change_time:
@@ -311,6 +323,8 @@ def main():
                 lead_control = lead_controller.run_step(lead_target_speed_kmh, lead_target_waypoint)
             else:
                 lead_control = carla.VehicleControl(throttle=0.0, steer=0.0, brake=0.25)
+            lead_control = limit_steer_rate(lead_control, lead_prev_steer, steer_delta_limit)
+            lead_prev_steer = lead_control.steer
             lead_vehicle.apply_control(lead_control)
 
             # Get current positions
@@ -350,23 +364,17 @@ def main():
                 )
                 continue
 
+            preview_waypoint = choose_straight_successor(target_waypoint, 4.0)
+            tracking_waypoint = target_waypoint if preview_waypoint is None else preview_waypoint
+
             lead_speed = math.sqrt(lead_vel.x**2 + lead_vel.y**2 + lead_vel.z**2)
-            ego_speed = math.sqrt(ego_vel.x**2 + ego_vel.y**2 + ego_vel.z**2)
             lead_speed_kmh = lead_speed * 3.6
-            ego_speed_kmh = ego_speed * 3.6
-
             distance_error = distance - follow_distance
-            closing_error_kmh = max(0.0, lead_speed_kmh - ego_speed_kmh)
-            catchup_boost = max(0.0, distance_error) * 3.0 + max(0.0, distance_error - 10.0) * 1.5
-            target_speed_kmh = clamp(
-                lead_speed_kmh + catchup_boost + 0.60 * closing_error_kmh,
-                0.0,
-                30.0,
-            )
-            if distance_error > 15.0:
-                target_speed_kmh = max(target_speed_kmh, min(30.0, lead_speed_kmh + 6.0))
+            target_speed_kmh = lead_speed_kmh + follow_distance_speed_gain * distance_error
 
-            control = ego_controller.run_step(target_speed_kmh, target_waypoint)
+            control = ego_controller.run_step(target_speed_kmh, tracking_waypoint)
+            control = limit_steer_rate(control, ego_prev_steer, steer_delta_limit)
+            ego_prev_steer = control.steer
             ego_vehicle.apply_control(control)
 
             lead_speed = math.sqrt(lead_vel.x**2 + lead_vel.y**2 + lead_vel.z**2)
