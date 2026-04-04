@@ -40,11 +40,6 @@ Once setup is complete, explore these guides:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | **[QUICKSTART.md](QUICKSTART.md)** | First-time usage workflows | After SETUP.ps1 completes |
-| **[STREAM_REFERENCE.md](STREAM_REFERENCE.md)** | Live stream files & formats | Before loading into VIATRA |
-| **[VIATRA_STREAM_GUIDE.md](VIATRA_STREAM_GUIDE.md)** | Eclipse + VIATRA integration | When setting up Eclipse |
-| **[docs/architecture.md](docs/architecture.md)** | System design & data flow | For understanding architecture |
-| **[docs/extractor_usage.md](docs/extractor_usage.md)** | Scene graph export details | For custom extraction |
-| **[docs/viatra_stream_integration.md](docs/viatra_stream_integration.md)** | VIATRA consumption patterns | For advanced VIATRA usage |
 
 ---
 
@@ -58,11 +53,11 @@ Once setup is complete, explore these guides:
 **Source Code:**
 - `src/carla_scenegraph_export.py` — Export CARLA state as XMI scene graphs
 - `src/scenegraph_stream_bridge.py` — Continuous stream producer (XMI + JSONL)
-- `src/scenario_live_moving.py` — Demo: vehicles with autopilot
+- `src/scenario_ego_follow.py` — Demo: ego vehicle follows lead vehicle (with follow camera)
 
 **Metamodel & Queries:**
-- `model/SceneGraph.ecore` — EMF metamodel (Vehicle, Pedestrian, Node, Edge)
-- `queries/scenegraph.vql` — VIATRA query patterns (fastVehicle, connected, etc.)
+- `SceneGraphModel/model/SceneGraph.ecore` — EMF metamodel (Vehicle, Pedestrian, Node, Edge)
+- `SceneGraphQueries/src/queries/scenegraph.vql` — VIATRA query patterns (fastVehicle, connected, etc.)
 
 **Scale Simulation & Utilities:**
 - `scripts/bootstrap_windows.ps1` — Legacy prerequisite checker
@@ -70,7 +65,6 @@ Once setup is complete, explore these guides:
 - `scripts/open_live_view.ps1` — Open live graph visualization
 
 **Data & Outputs:**
-- `data/stream/snapshots/` — XMI scene graph snapshots (1700+ files per session)
 - `data/stream/latest_snapshot.xmi` — Most recent snapshot (auto-synced)
 - `data/stream/events.jsonl` — Incremental change events (JSONL format)
 - `data/stream/live_view.html` — Auto-refresh browser visualization
@@ -81,11 +75,11 @@ Once setup is complete, explore these guides:
 
 **Data Flow:**
 ```
-CARLA Simulator → Scene Graph Export → XMI Snapshots + JSONL Events
-                                              ↓
-                                    VIATRA Query Engine
-                                              ↓
-                                      Query Results
+CARLA Simulator → Scene Graph Export → latest_snapshot.xmi + JSONL Events
+                ↓
+            VIATRA Query Engine
+                ↓
+              Query Results
 ```
 
 **Components:**
@@ -103,7 +97,6 @@ All outputs are written to `data/stream/` directory:
 | File | Format | Purpose |
 |------|--------|---------|
 | `latest_snapshot.xmi` | XMI | Current world state (load into VIATRA) |
-| `snapshots/snapshot_XXXXXX.xmi` | XMI | Historical snapshots (1700+ per session) |
 | `events.jsonl` | JSONL | Incremental changes per tick (node/edge deltas) |
 | `current_state.json` | JSON | Same as latest_snapshot.xmi but in JSON |
 | `live_view.html` | HTML | Auto-refresh browser visualization |
@@ -118,7 +111,7 @@ All outputs are written to `data/stream/` directory:
 
 **Example JSONL Event:**
 ```json
-{"timestamp": "2026-03-09T02:33:12.935688+00:00", "tick": 1, "snapshot": "data/stream/snapshots/snapshot_000001.xmi", "node_changes": {"added": [{"node_type": "Vehicle", "external_id": "26", "x": -64.6446, "y": 24.471, "z": -0.0075, "speed": 0.0}], "removed": [], "updated": []}}
+{"timestamp": "2026-03-09T02:33:12.935688+00:00", "tick": 1, "snapshot": "data/stream/latest_snapshot.xmi", "node_changes": {"added": [{"node_type": "Vehicle", "external_id": "26", "x": -64.6446, "y": 24.471, "z": -0.0075, "speed": 0.0}], "removed": [], "updated": []}}
 ```
 
 ---

@@ -1,4 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<scenegraph:Scene xmlns:scenegraph="http://cas782/scenegraph" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmi:version="2.0" name="CARLA_Snapshot">
-  <nodes xsi:type="scenegraph:Vehicle" id="26" x="-64.644646" y="24.470968" z="-0.007454" speed="0.000000" />
-</scenegraph:Scene>

@@ -20,7 +20,7 @@
 .\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --mock --output .\data\scene_mock.xmi
 ```
 
-**Result:** Creates `data/scene_mock.xmi` with 3 nodes (2 vehicles, 1 pedestrian) and proximity edges.
+**Result:** Creates `data/scene_mock.xmi` with 3 nodes (2 vehicles, 1 pedestrian).
 
 ### Option B: Live CARLA
 
@@ -44,13 +44,13 @@ Wait for CARLA window to fully load (you'll see the main menu or simulation view
 
 ### Option C: Continuous Streaming
 
-Start a scenario
+Start a scenario. There are other scenario options in the src folder.
 
 ```powershell
-.\.venv\Scripts\python.exe .\src\scenario_traffic.py --output .\data\scene_live.xmi
+.\.venv\Scripts\python.exe .\src\scenario_ego_follow.py
 ```
 
-Start the streaming bridge (updates scene graph every second):
+Start the streaming bridge (updates `latest_snapshot.xmi` every second):
 
 ```powershell
 # Mock mode (no CARLA needed)
@@ -122,8 +122,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
 
 1. **Review Available Query Patterns**
    - Open `SceneGraphAPIQueries\src\apiqueries\QueryRunner.java`
-   - You'll see three patterns:
-     - `slowVehicle` - Finds vehicles moving slower than 50 km/h
+    - You'll see the currently registered query patterns in this runner.
    - Go to line 48 and change the path so it is correct for your system
 
 2. **Open up a Console**
@@ -135,79 +134,7 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Click `New configuration`
    - Program to Run → Run an application → SceneGraphAPIQueries.queryrunner
    - Click `Run`
-   - Note that building the application took slightly over 2 minutes for me. Not sure why. Running the VIATRA query took around 200 ms
-
-## Example Workflow
-
-### Complete Mock Example
-
-```powershell
-# 1. Generate mock scene graph
-.\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --mock --output .\data\demo.xmi
-
-# 2. View the XMI
-Get-Content .\data\demo.xmi
-
-# 3. Import into Eclipse + VIATRA and run queries
-```
-
-### Complete Live CARLA Example
-
-```powershell
-# Terminal 1: Start CARLA
-.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed
-
-# Terminal 2 (this project): Generate scene graph
-.\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --output .\data\live.xmi
-
-# 3. Import live.xmi into Eclipse + VIATRA
-# 4. Run queries to analyze the current scene
-```
-
-## Next Steps
-
-1. **Add More Actors to CARLA**
-   - Spawn vehicles and pedestrians in CARLA
-   - Re-export scene graph
-   - See updated query results
-
-2. **Create Custom Queries**
-   - Open `scenegraph.vql` in Eclipse
-   - Add new patterns (e.g., "vehicles near pedestrians")
-   - Test on your scene graphs
-
-3. **Implement Transformations**
-   - Use VIATRA Transformation API
-   - Create model-to-model transformations
-   - Example: Generate warning events for detected conflicts
-
-## Troubleshooting
-
-### CARLA Connection Issues
-```powershell
-# Test connection
-.\.venv\Scripts\python.exe -c "import carla; c = carla.Client('127.0.0.1', 2000); c.set_timeout(2.0); print('Connected:', c.get_world().get_map().name)"
-```
-
-### VIATRA Query Not Finding Matches
-- Ensure EPackage is registered correctly
-- Check XMI file has correct namespace: `xmlns:scenegraph="http://cas782/scenegraph"`
-- Verify metamodel and instance are compatible
-
-### Empty Scene Graph
-- CARLA world may have no actors
-- In CARLA, use `examples/spawn_npc.py` to add actors:
-```powershell
-# From your project directory
-.\.venv\Scripts\python.exe .\CARLA_0.9.16\PythonAPI\examples\spawn_npc.py -n 20 -w 10
-```
-
-## Documentation
-
-- `docs/windows_setup_carla_viatra.md` - Detailed setup instructions
-- `docs/architecture.md` - System architecture and data flow
-- `docs/extractor_usage.md` - Scene graph export details
-- `docs/viatra_stream_integration.md` - Streaming integration
+   - Note that building the application took slightly over 2 minutes for me. Not sure why. Running the VIATRA queries takes around 50 ms
 
 ## Verification Checklist
 

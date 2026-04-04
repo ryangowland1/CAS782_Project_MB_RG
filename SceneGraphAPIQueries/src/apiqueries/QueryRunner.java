@@ -99,7 +99,7 @@ public class QueryRunner implements IApplication {
                 Scene scene = (Scene) v1.eContainer();
 
                 List<Edge> toRemove = scene.getEdges().stream()
-                    .filter(e -> "proximity".equals(e.getType()))
+                    .filter(e -> "vehicle".equals(e.getType()))
                     .filter(e -> (e.getSource() == v1 && e.getTarget() == v2) ||
                                  (e.getSource() == v2 && e.getTarget() == v1))
                     .toList();
@@ -238,7 +238,7 @@ public class QueryRunner implements IApplication {
         }
     }
 
-    // Shared logic for all proximity rules
+    // Shared logic for all vehicle-distance rules
     private void applyDistance(Vehicle v1, Vehicle v2, String distance) {
 
         if (v1.getId().compareTo(v2.getId()) >= 0) return;
@@ -246,7 +246,7 @@ public class QueryRunner implements IApplication {
         Scene scene = (Scene) v1.eContainer();
 
         Edge edge = scene.getEdges().stream()
-            .filter(e -> "proximity".equals(e.getType()))
+            .filter(e -> "vehicle".equals(e.getType()))
             .filter(e -> e.getSource() == v1 && e.getTarget() == v2)
             .findFirst()
             .orElse(null);
@@ -255,7 +255,7 @@ public class QueryRunner implements IApplication {
             edge = SceneGraphModelFactory.eINSTANCE.createEdge();
             edge.setSource(v1);
             edge.setTarget(v2);
-            edge.setType("proximity");
+            edge.setType("vehicle");
             edge.setSpatial("");
             scene.getEdges().add(edge);
 
@@ -280,7 +280,7 @@ public class QueryRunner implements IApplication {
         Scene scene = (Scene) source.eContainer();
 
         Edge edge = scene.getEdges().stream()
-            .filter(e -> "proximity".equals(e.getType()))
+            .filter(e -> "vehicle".equals(e.getType()))
             .filter(e -> e.getSource() == source && e.getTarget() == target)
             .findFirst()
             .orElse(null);

@@ -53,13 +53,6 @@ class Edge:
     target_index: int
 
 
-def _distance(a: Node, b: Node) -> float:
-    dx = a.x - b.x
-    dy = a.y - b.y
-    dz = a.z - b.z
-    return math.sqrt(dx * dx + dy * dy + dz * dz)
-
-
 def _waypoint_segment_length(start_waypoint, end_waypoint) -> float:
     """Estimate lane segment length for a topology edge in meters."""
     try:
@@ -255,17 +248,6 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
     return nodes
 
 
-def build_edges(nodes: List[Node], proximity_m: float) -> List[Edge]:
-    edges: List[Edge] = []
-    for i, src in enumerate(nodes):
-        for j, dst in enumerate(nodes):
-            if i >= j:
-                continue
-            dist = _distance(src, dst)
-            if dist <= proximity_m:
-                edges.append(Edge("proximity", f"{dist:.6f}", "", i, j))
-    return edges
-
 def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
     """
     Writes an XML/XMI file with retry logic if the file is locked.
@@ -363,12 +345,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=2000, help="CARLA RPC port")
     parser.add_argument("--timeout", type=float, default=5.0, help="CARLA client timeout seconds")
     parser.add_argument(
-        "--proximity-threshold",
-        type=float,
-        default=12.0,
-        help="Distance threshold for generating proximity edges",
-    )
-    parser.add_argument(
         "--mock",
         action="store_true",
         help="Generate deterministic sample without CARLA connection",
@@ -388,7 +364,7 @@ def main() -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    edges = build_edges(nodes, args.proximity_threshold)
+    edges: List[Edge] = []
     write_scene_xmi(args.scene_name, nodes, edges, Path(args.output))
 
     print(f"Wrote {len(nodes)} nodes and {len(edges)} edges to {args.output}")

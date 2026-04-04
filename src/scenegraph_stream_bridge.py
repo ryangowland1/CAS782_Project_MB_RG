@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Continuously export CARLA scene graphs as XMI snapshots + JSONL change events.
 
 Outputs:
-- data/stream/snapshots/snapshot_XXXXXX.xmi
 - data/stream/latest_snapshot.xmi
 - data/stream/events.jsonl
 - data/stream/live_view.html
@@ -11,16 +10,21 @@ Outputs:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import math
-import portalocker
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
-from carla_scenegraph_export import Edge, Node, build_edges, collect_carla_nodes, collect_mock_nodes, write_scene_xmi
+from carla_scenegraph_export import Edge, Node, collect_carla_nodes, collect_mock_nodes, write_scene_xmi
+
+try:
+    portalocker = importlib.import_module("portalocker")
+except ImportError:
+    portalocker = None
 
 
 def now_iso() -> str:
@@ -74,126 +78,213 @@ def diff_edges(prev: Set[Tuple[str, str, str, str, str]], curr_edges: List[Edge]
     removed = sorted(prev - curr)
     return {
         "added": [{"type": t, "source": s, "target": d, "distance": i, "spatial": j} for t, s, d, i, j in added],
-        "removed": [{"type": t, "source": s, "target": d , "distance": i, "spatial": j} for t, s, d, i, j in removed],
+        "removed": [{"type": t, "source": s, "target": d, "distance": i, "spatial": j} for t, s, d, i, j in removed],
     }
 
 
-def to_view_space(nodes: List[Node], width: int = 960, height: int = 540) -> Dict[str, Tuple[float, float]]:
+def to_view_space(nodes: List[Node], width: int = 1600, height: int = 1000) -> Dict[str, Tuple[float, float]]:
     if not nodes:
         return {}
 
-    xs = [n.x for n in nodes]
-    ys = [n.y for n in nodes]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
+    ordered_nodes = sorted(nodes, key=lambda n: (n.node_type, n.external_id))
+    count = len(ordered_nodes)
 
-    span_x = max(max_x - min_x, 1.0)
-    span_y = max(max_y - min_y, 1.0)
-
-    margin = 40.0
-    scale_x = (width - 2 * margin) / span_x
-    scale_y = (height - 2 * margin) / span_y
-    scale = min(scale_x, scale_y)
-
+    cx = width * 0.5
+    cy = height * 0.55
     mapped: Dict[str, Tuple[float, float]] = {}
-    for node in nodes:
-        vx = margin + (node.x - min_x) * scale
-        vy = height - (margin + (node.y - min_y) * scale)
-        mapped[node.external_id] = (vx, vy)
+
+    if count == 1:
+        mapped[ordered_nodes[0].external_id] = (cx, cy)
+        return mapped
+
+    if count == 2:
+        spread = min(width * 0.38, 620.0)
+        points = [(cx - spread / 2.0, cy), (cx + spread / 2.0, cy)]
+    elif count == 3:
+        # Equilateral triangle for 3 active nodes.
+        side = min(width, height) * 0.58
+        h = side * math.sqrt(3.0) / 2.0
+        points = [
+            (cx, cy - h / 2.0),
+            (cx - side / 2.0, cy + h / 2.0),
+            (cx + side / 2.0, cy + h / 2.0),
+        ]
+    elif count == 4:
+        # Axis-aligned square for 4 active nodes.
+        half = min(width, height) * 0.24
+        points = [
+            (cx - half, cy - half),
+            (cx + half, cy - half),
+            (cx - half, cy + half),
+            (cx + half, cy + half),
+        ]
+    elif count <= 12:
+        # Small sets: regular polygon ring so spacing scales with active nodes.
+        radius = min(width, height) * (0.30 + 0.016 * count)
+        points = []
+        for idx in range(count):
+            angle = -math.pi / 2.0 + (2.0 * math.pi * idx) / count
+            points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    else:
+        # Larger sets: adaptive grid whose spacing depends on active node count.
+        cols = math.ceil(math.sqrt(count))
+        rows = math.ceil(count / cols)
+        usable_width = width * 0.90
+        usable_height = height * 0.90
+        start_x = (width - usable_width) / 2.0
+        start_y = (height - usable_height) / 2.0
+        dx = usable_width / max(cols - 1, 1)
+        dy = usable_height / max(rows - 1, 1)
+        points = []
+        for idx in range(count):
+            gx = idx % cols
+            gy = idx // cols
+            points.append((start_x + gx * dx, start_y + gy * dy))
+
+    min_x = width * 0.02
+    max_x = width * 0.94
+    min_y = height * 0.03
+    max_y = height * 0.97
+    for node, (x, y) in zip(ordered_nodes, points):
+        mapped[node.external_id] = (min(max(x, min_x), max_x), min(max(y, min_y), max_y))
+
     return mapped
-
-def compute_view_scale(nodes: List[Node], width: int = 960, height: int = 540) -> float:
-    """Compute world-to-view scale factor (px per meter)."""
-    if not nodes:
-        return 1.0
-
-    xs = [n.x for n in nodes]
-    ys = [n.y for n in nodes]
-    span_x = max(max(xs) - min(xs), 1.0)
-    span_y = max(max(ys) - min(ys), 1.0)
-
-    margin = 40.0
-    scale_x = (width - 2 * margin) / span_x
-    scale_y = (height - 2 * margin) / span_y
-    return min(scale_x, scale_y)
 
 
 def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge], tick: int) -> None:
-        mapped = to_view_space(nodes)
-        view_scale = compute_view_scale(nodes)
-        node_by_id = {n.external_id: n for n in nodes}
+    node_by_id = {n.external_id: n for n in nodes}
 
-        lane_parts: List[str] = []
-        for node in nodes:
-                if node.node_type != "RoadSegment":
-                        continue
-                if node.length is None or node.width is None:
-                        continue
+    # Keep only lane nodes that participate in at least one edge.
+    connected_lane_ids: Set[str] = set()
+    for edge in edges:
+        if edge.source_index < 0 or edge.target_index < 0:
+            continue
+        if edge.source_index >= len(nodes) or edge.target_index >= len(nodes):
+            continue
+        src_id = nodes[edge.source_index].external_id
+        dst_id = nodes[edge.target_index].external_id
+        src_node = node_by_id.get(src_id)
+        dst_node = node_by_id.get(dst_id)
+        if src_node is not None and src_node.node_type == "RoadSegment":
+            connected_lane_ids.add(src_id)
+        if dst_node is not None and dst_node.node_type == "RoadSegment":
+            connected_lane_ids.add(dst_id)
 
-                center = mapped.get(node.external_id)
-                if center is None:
-                        continue
+    visible_node_ids: Set[str] = set()
+    for node in nodes:
+        if node.node_type != "RoadSegment" or node.external_id in connected_lane_ids:
+            visible_node_ids.add(node.external_id)
 
-                cx, cy = center
-                lane_len_px = max(node.length * view_scale, 6.0)
-                lane_width_px = max(node.width * view_scale, 2.0)
-                x = cx - lane_len_px / 2.0
-                y = cy - lane_width_px / 2.0
-                angle_deg = -math.degrees(node.heading)
+    visible_nodes = [node_by_id[node_id] for node_id in sorted(visible_node_ids)]
+    mapped = to_view_space(visible_nodes)
 
-                lane_parts.append(
-                        f'<rect x="{x:.1f}" y="{y:.1f}" width="{lane_len_px:.1f}" height="{lane_width_px:.1f}" '
-                        f'rx="1.5" fill="#81c784" fill-opacity="0.28" stroke="#2e7d32" stroke-width="0.9" '
-                        f'transform="rotate({angle_deg:.2f} {cx:.1f} {cy:.1f})" />'
-                )
+    line_parts: List[str] = []
+    edge_text_parts: List[str] = []
+    visible_edge_count = 0
+    for edge in edges:
+        if edge.source_index < 0 or edge.target_index < 0:
+            continue
+        if edge.source_index >= len(nodes) or edge.target_index >= len(nodes):
+            continue
+        src = nodes[edge.source_index].external_id
+        dst = nodes[edge.target_index].external_id
+        if src not in visible_node_ids or dst not in visible_node_ids:
+            continue
+        x1, y1 = mapped[src]
+        x2, y2 = mapped[dst]
+        line_parts.append(
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#738497" stroke-opacity="0.80" stroke-width="4.2" />'
+        )
 
-        line_parts: List[str] = []
-        for edge in edges:
-                src = nodes[edge.source_index].external_id
-                dst = nodes[edge.target_index].external_id
-                x1, y1 = mapped[src]
-                x2, y2 = mapped[dst]
-                line_parts.append(
-                        f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#5d6d7e" stroke-width="1.5" />'
-                )
+        label_parts: List[str] = [edge.edge_type]
+        if edge.distance:
+            label_parts.append(f"dist={edge.distance}")
+        if edge.spatial:
+            label_parts.append(f"spatial={edge.spatial}")
 
-        circle_parts: List[str] = []
-        for node_id, (x, y) in mapped.items():
-                node = node_by_id[node_id]
-                if node.node_type == "Vehicle":
-                        color = "#1f77b4"  # Blue
-                elif node.node_type == "Pedestrian":
-                        color = "#d62728"  # Red
-                else:  # RoadSegment or other types
-                        color = "#2ca02c"  # Green
-                circle_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{color}" />')
-                circle_parts.append(
-                        f'<text x="{x + 10:.1f}" y="{y - 10:.1f}" font-size="12" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
-                )
+        label = " | ".join(label_parts)
+        mx = (x1 + x2) / 2.0
+        my = (y1 + y2) / 2.0
 
-        html = f"""<!doctype html>
+        dx = x2 - x1
+        dy = y2 - y1
+        length = math.hypot(dx, dy)
+        if length < 1e-6:
+            nx, ny = 0.0, -1.0
+        else:
+            nx, ny = -dy / length, dx / length
+
+        src_type = node_by_id[src].node_type
+        dst_type = node_by_id[dst].node_type
+        if src_type == "Vehicle" or dst_type == "Vehicle":
+            offset = 40.0
+        else:
+            offset = 28.0
+
+        edge_text_parts.append(
+            f'<text x="{mx + nx * offset:.1f}" y="{my + ny * offset:.1f}" font-size="28" fill="#334155" '
+            f'stroke="#ffffff" stroke-width="1.4" paint-order="stroke">{label}</text>'
+        )
+        visible_edge_count += 1
+
+    circle_parts: List[str] = []
+    for node in visible_nodes:
+        node_id = node.external_id
+        x, y = mapped[node_id]
+        if node.node_type == "Vehicle":
+            color = "#1f77b4"  # Blue
+        elif node.node_type == "Pedestrian":
+            color = "#d62728"  # Red
+        else:  # RoadSegment or other types
+            color = "#2ca02c"  # Green
+
+        if node.node_type == "Vehicle":
+            circle_parts.append(
+                f'<rect x="{x - 9:.1f}" y="{y - 15:.1f}" width="18" height="30" rx="4" fill="{color}" />'
+            )
+        else:
+            circle_parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="14" fill="{color}" />')
+
+        circle_parts.append(
+            f'<text x="{x + 26:.1f}" y="{y - 26:.1f}" font-size="34" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
+        )
+
+    html = f"""<!doctype html>
 <html>
 <head>
     <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
     <meta http-equiv=\"refresh\" content=\"0.2\" />
     <title>Scene Graph Live View</title>
     <style>
-        body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; margin: 0; }}
-        .wrap {{ max-width: 1000px; margin: 24px auto; background: white; border: 1px solid #d0d7de; border-radius: 10px; }}
-        .head {{ padding: 14px 16px; border-bottom: 1px solid #e5e7eb; }}
-        .meta {{ color: #3f4b5b; font-size: 14px; }}
-        svg {{ display: block; width: 100%; height: auto; background: #fcfdff; }}
+        html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; }}
+        body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; }}
+        .wrap {{
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            background: white;
+            border: 0;
+            border-radius: 0;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }}
+        .head {{ padding: 18px 22px; border-bottom: 1px solid #e5e7eb; flex: 0 0 auto; }}
+        .head strong {{ font-size: 36px; font-weight: 700; }}
+        .meta {{ color: #3f4b5b; font-size: 28px; margin-top: 6px; }}
+        svg {{ display: block; width: 100%; height: 100%; flex: 1 1 auto; background: #fcfdff; }}
     </style>
 </head>
 <body>
     <div class=\"wrap\">
         <div class=\"head\">
             <strong>CARLA Scene Graph Live View</strong>
-            <div class=\"meta\">Tick: {tick} | Nodes: {len(nodes)} | Edges: {len(edges)} | Auto-refresh: 200ms</div>
+            <div class=\"meta\">Tick: {tick} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count} | Auto-refresh: 200ms</div>
         </div>
-        <svg viewBox=\"0 0 960 540\" xmlns=\"http://www.w3.org/2000/svg\">
-            {''.join(lane_parts)}
+        <svg viewBox=\"0 0 1600 1000\" preserveAspectRatio=\"none\" xmlns=\"http://www.w3.org/2000/svg\">
             {''.join(line_parts)}
+                {''.join(edge_text_parts)}
             {''.join(circle_parts)}
         </svg>
     </div>
@@ -201,8 +292,8 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 </html>
 """
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(html, encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")
 
 
 def collect_nodes(mock: bool, host: str, port: int, timeout: float, tick: int) -> List[Node]:
@@ -238,31 +329,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--carla-address", default="127.0.0.1", help="CARLA host")
     parser.add_argument("--port", type=int, default=2000, help="CARLA RPC port")
     parser.add_argument("--timeout", type=float, default=5.0, help="CARLA RPC timeout")
-    parser.add_argument("--proximity-threshold", type=float, default=12.0, help="Edge creation threshold")
     parser.add_argument("--mock", action="store_true", help="Run without CARLA using synthetic movement")
     return parser.parse_args()
+
 
 def read_xml_with_retry(path, retries=5, delay=0.05):
     last_exception = None
 
     for attempt in range(retries):
         try:
-            with open(path, 'rb') as f:
-                try:
-                    # Match Java tryLock(): exclusive + non-blocking
-                    portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-                except portalocker.exceptions.LockException as e:
-                    last_exception = e
-                    if attempt == retries - 1:
-                        print(f"File is locked after {retries} attempts: {path}")
-                        return None
-                    time.sleep(delay)
-                    continue
+            with open(path, "rb") as f:
+                if portalocker is not None:
+                    try:
+                        # Match Java tryLock(): exclusive + non-blocking
+                        portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
+                    except portalocker.exceptions.LockException as e:
+                        last_exception = e
+                        if attempt == retries - 1:
+                            print(f"File is locked after {retries} attempts: {path}")
+                            return None
+                        time.sleep(delay)
+                        continue
 
-                try:
-                    return ET.parse(f)
-                finally:
-                    portalocker.unlock(f)
+                    try:
+                        return ET.parse(f)
+                    finally:
+                        portalocker.unlock(f)
+
+                return ET.parse(f)
 
         except Exception as e:
             last_exception = e
@@ -272,17 +366,17 @@ def read_xml_with_retry(path, retries=5, delay=0.05):
 
     raise Exception("Unexpected failure") from last_exception
 
+
 def main() -> int:
     args = parse_args()
 
     out_dir = Path(args.out_dir)
-    snap_dir = out_dir / "snapshots"
     latest_path = out_dir / "latest_snapshot.xmi"
     events_path = out_dir / "events.jsonl"
     state_path = out_dir / "current_state.json"
     view_path = out_dir / "live_view.html"
 
-    snap_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     prev_nodes: Dict[str, Dict[str, object]] = {}
     prev_edges: Set[Tuple[str, str, str, str, str]] = set()
@@ -291,7 +385,6 @@ def main() -> int:
     while True:
         tick += 1
         nodes = collect_nodes(args.mock, args.carla_address, args.port, args.timeout, tick)
-        new_edges = [] # build_edges(nodes, args.proximity_threshold)
 
         # Read existing edges from latest XMI
         edges: List[Edge] = []
@@ -331,17 +424,7 @@ def main() -> int:
                 # If file is corrupted or empty, fallback to new edges
                 edges = []
 
-        # Merge new edges with existing ones, avoiding duplicates
-        existing_keys = {(e.source_index, e.target_index, e.edge_type, e.distance, e.spatial or "") for e in edges}
-        for e in new_edges:
-            key = (e.source_index, e.target_index, e.edge_type, e.distance, e.spatial or "")
-            if key not in existing_keys:
-                edges.append(e)
-                existing_keys.add(key)
-
-        snapshot_name = f"snapshot_{tick:06d}.xmi"
-        snapshot_path = snap_dir / snapshot_name
-        # Write scene with merged edges
+        # Write only the rolling latest snapshot.
         write_scene_xmi(args.scene_name, nodes, edges, latest_path)
         write_live_view_html(view_path, nodes, edges, tick)
 
@@ -351,7 +434,7 @@ def main() -> int:
         event = {
             "timestamp": now_iso(),
             "tick": tick,
-            "snapshot": str(snapshot_path).replace("\\", "/"),
+            "snapshot": str(latest_path).replace("\\", "/"),
             "node_count": len(nodes),
             "edge_count": len(edges),
             "node_changes": node_diff,
@@ -367,7 +450,7 @@ def main() -> int:
         prev_edges = {edge_key(edge, nodes) for edge in edges}
 
         print(
-            f"tick={tick} nodes={len(nodes)} edges={len(edges)} snapshot={snapshot_name}",
+            f"tick={tick} nodes={len(nodes)} edges={len(edges)} snapshot={latest_path}",
             flush=True,
         )
 
