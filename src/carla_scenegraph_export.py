@@ -101,11 +101,9 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
         heading = math.radians(transform.rotation.yaw)
 
         if actor_type.startswith("vehicle."):
-            node_type = "Vehicle"
-            node_speed = speed
+            node_type, node_speed = "Vehicle", speed
         elif actor_type.startswith("walker.pedestrian."):
-            node_type = "Pedestrian"
-            node_speed = None
+            node_type, node_speed = "Pedestrian", None
         else:
             continue
 
@@ -251,7 +249,7 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
     """
     for attempt in range(retries):
         try:
-            with open(path, 'wb') as f:
+            with open(path, "wb") as f:
                 try:
                     # Exclusive non-blocking lock (Java tryLock equivalent)
                     portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
@@ -263,7 +261,7 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
                     continue
 
                 try:
-                    tree.write(f, encoding='utf-8', xml_declaration=True)
+                    tree.write(f, encoding="utf-8", xml_declaration=True)
                     f.flush()
                     return True
                 finally:
@@ -276,6 +274,38 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
 
     return False
 
+
+def _node_attributes(node: Node) -> dict:
+    attrs = {
+        f"{{{XSI_NS}}}type": f"scenegraph:{node.node_type}",
+        "id": str(node.external_id),
+        "x": f"{node.x:.6f}",
+        "y": f"{node.y:.6f}",
+        "z": f"{node.z:.6f}",
+        "heading": f"{node.heading:.6f}",
+    }
+
+    if node.node_type == "Vehicle" and node.speed is not None:
+        attrs["speed"] = f"{node.speed:.6f}"
+
+    if node.node_type == "RoadSegment":
+        if node.length is not None:
+            attrs["length"] = f"{node.length:.6f}"
+        if node.width is not None:
+            attrs["width"] = f"{node.width:.6f}"
+
+    return attrs
+
+
+def _edge_attributes(edge: Edge) -> dict:
+    return {
+        "type": str(edge.edge_type or ""),
+        "distance": str(edge.distance or ""),
+        "spatial": str(edge.spatial or ""),
+        "source": f"//@nodes.{edge.source_index}",
+        "target": f"//@nodes.{edge.target_index}",
+    }
+
 def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], output_path: Path) -> None:
     scene_tag = f"{{{SCENEGRAPH_NS}}}Scene"
     root = ET.Element(
@@ -287,35 +317,10 @@ def write_scene_xmi(scene_name: str, nodes: List[Node], edges: List[Edge], outpu
     )
 
     for node in nodes:
-        attrs = {
-            f"{{{XSI_NS}}}type": f"scenegraph:{node.node_type}",
-            "id": str(node.external_id),
-            "x": f"{node.x:.6f}",
-            "y": f"{node.y:.6f}",
-            "z": f"{node.z:.6f}",
-            "heading": f"{node.heading:.6f}",
-        }
-        if node.node_type == "Vehicle" and node.speed is not None:
-            attrs["speed"] = f"{node.speed:.6f}"
-        if node.node_type == "RoadSegment":
-            if node.length is not None:
-                attrs["length"] = f"{node.length:.6f}"
-            if node.width is not None:
-                attrs["width"] = f"{node.width:.6f}"
-        ET.SubElement(root, "nodes", attrs)
+        ET.SubElement(root, "nodes", _node_attributes(node))
 
     for edge in edges:
-        ET.SubElement(
-            root,
-            "edges",
-            {
-                "type": str(edge.edge_type or ""),
-                "distance": str(edge.distance or ""),
-                "spatial": str(edge.spatial or ""),
-                "source": f"//@nodes.{edge.source_index}",
-                "target": f"//@nodes.{edge.target_index}",
-            },
-        )
+        ET.SubElement(root, "edges", _edge_attributes(edge))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tree = ET.ElementTree(root)

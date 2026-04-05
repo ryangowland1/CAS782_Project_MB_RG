@@ -47,7 +47,6 @@ public class QueryRunner implements IApplication {
 
     private static final String MODEL_PATH =
         "C:\\Users\\marko\\Documents\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
-    private static final long POLL_INTERVAL_MS = 200;
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
@@ -201,11 +200,10 @@ public class QueryRunner implements IApplication {
             EMFScope scope = new EMFScope(resource);
             ViatraQueryEngine engine = ViatraQueryEngine.on(scope);
 
-            BatchTransformation transformation =
-                BatchTransformation.forEngine(engine).build();
-
             BatchTransformationStatements statements =
-                transformation.getTransformationStatements();
+                BatchTransformation.forEngine(engine)
+                    .build()
+                    .getTransformationStatements();
 
             System.out.println("--- Executing Batch Transformation ---");
 
@@ -233,8 +231,6 @@ public class QueryRunner implements IApplication {
 
             long end = System.nanoTime();
             System.out.println("VIATRA took: " + (end - start) / 1_000_000 + " ms");
-
-            Thread.sleep(POLL_INTERVAL_MS);
         }
     }
 

@@ -161,20 +161,18 @@ def to_view_space(nodes: List[Node], width: int = 1600, height: int = 1000) -> D
 def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge], tick: int) -> None:
     node_by_id = {n.external_id: n for n in nodes}
 
-    # Keep only lane nodes that participate in at least one edge.
-    connected_lane_ids: Set[str] = set()
-    for _edge, src_id, dst_id in iter_valid_edge_endpoints(edges, nodes):
-        src_node = node_by_id.get(src_id)
-        dst_node = node_by_id.get(dst_id)
-        if src_node is not None and src_node.node_type == "RoadSegment":
-            connected_lane_ids.add(src_id)
-        if dst_node is not None and dst_node.node_type == "RoadSegment":
-            connected_lane_ids.add(dst_id)
+    connected_lane_ids: Set[str] = {
+        node_id
+        for _edge, src_id, dst_id in iter_valid_edge_endpoints(edges, nodes)
+        for node_id in (src_id, dst_id)
+        if node_by_id.get(node_id) is not None and node_by_id[node_id].node_type == "RoadSegment"
+    }
 
-    visible_node_ids: Set[str] = set()
-    for node in nodes:
-        if node.node_type != "RoadSegment" or node.external_id in connected_lane_ids:
-            visible_node_ids.add(node.external_id)
+    visible_node_ids: Set[str] = {
+        node.external_id
+        for node in nodes
+        if node.node_type != "RoadSegment" or node.external_id in connected_lane_ids
+    }
 
     visible_nodes = [node_by_id[node_id] for node_id in sorted(visible_node_ids)]
     mapped = to_view_space(visible_nodes)
@@ -349,6 +347,51 @@ def read_xml_with_retry(path, retries=5, delay=0.05):
     raise RuntimeError("Unexpected XML read retry state")
 
 
+def load_edges_from_snapshot(latest_path: Path) -> List[Edge]:
+    if not latest_path.exists():
+        return []
+
+    edges: List[Edge] = []
+    try:
+        tree = read_xml_with_retry(latest_path)
+        if tree is None:
+            raise ET.ParseError("Latest snapshot is temporarily unavailable")
+
+        root = tree.getroot()
+        for edge_elem in root.findall("edges"):
+            source_ref = edge_elem.get("source")
+            target_ref = edge_elem.get("target")
+            if not source_ref or not target_ref:
+                continue
+
+            try:
+                source_index = int(source_ref.rsplit(".", 1)[-1])
+                target_index = int(target_ref.rsplit(".", 1)[-1])
+            except (ValueError, TypeError):
+                continue
+
+            edges.append(
+                Edge(
+                    edge_type=edge_elem.get("type") or "",
+                    distance=edge_elem.get("distance") or "",
+                    spatial=edge_elem.get("spatial") or "",
+                    source_index=source_index,
+                    target_index=target_index,
+                )
+            )
+    except ET.ParseError:
+        return []
+
+    return edges
+
+
+def persist_event(event: Dict[str, object], events_path: Path, state_path: Path) -> None:
+    with events_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+
+    state_path.write_text(json.dumps(event, indent=2), encoding="utf-8")
+
+
 def main() -> int:
     args = parse_args()
 
@@ -368,43 +411,7 @@ def main() -> int:
         tick += 1
         nodes = collect_nodes(args.mock, args.carla_address, args.port, args.timeout, tick)
 
-        # Read existing edges from latest XMI
-        edges: List[Edge] = []
-        if latest_path.exists():
-            try:
-                tree = read_xml_with_retry(latest_path)
-                if tree is None:
-                    raise ET.ParseError("Latest snapshot is temporarily unavailable")
-                root = tree.getroot()
-                for edge_elem in root.findall("edges"):
-                    edge_type = edge_elem.get("type") or ""
-                    distance = edge_elem.get("distance") or ""
-                    spatial = edge_elem.get("spatial") or ""
-                    source_ref = edge_elem.get("source")
-                    target_ref = edge_elem.get("target")
-
-                    # Ignore malformed persisted edges rather than crashing stream updates.
-                    if not source_ref or not target_ref:
-                        continue
-
-                    try:
-                        source_index = int(source_ref.rsplit(".", 1)[-1])
-                        target_index = int(target_ref.rsplit(".", 1)[-1])
-                    except (ValueError, TypeError):
-                        continue
-
-                    edges.append(
-                        Edge(
-                            edge_type=edge_type,
-                            distance=distance,
-                            spatial=spatial,
-                            source_index=source_index,
-                            target_index=target_index,
-                        )
-                    )
-            except ET.ParseError:
-                # If file is corrupted or empty, fallback to new edges
-                edges = []
+        edges = load_edges_from_snapshot(latest_path)
 
         # Write only the rolling latest snapshot.
         write_scene_xmi(args.scene_name, nodes, edges, latest_path)
@@ -423,10 +430,7 @@ def main() -> int:
             "edge_changes": edge_diff,
         }
 
-        with events_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(event) + "\n")
-
-        state_path.write_text(json.dumps(event, indent=2), encoding="utf-8")
+        persist_event(event, events_path, state_path)
 
         prev_nodes = {node.external_id: normalize_node(node) for node in nodes}
         prev_edges = {edge_key(edge, nodes) for edge in edges}
