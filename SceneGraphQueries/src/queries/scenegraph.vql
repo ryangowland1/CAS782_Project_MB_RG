@@ -208,3 +208,42 @@ pattern RemoveVehicleOnLane(vehicle: Vehicle, lane: RoadSegment) {
 
     neg find VehicleOnLane(vehicle, lane);
 }
+
+// EgoFollowing: the ego vehicle is longitudinally following a lead vehicle.
+// Conditions:
+//   - ego has id "veh-ego" (mock/demo dataset convention)
+//   - lead is within ego's forward sector (±45°, i.e., ±π/4 rad from ego heading)
+//   - Euclidean distance is 5 m – 50 m (dist² ∈ [25, 2500])
+//   - both vehicles are moving (speed > 0.5 m/s)
+pattern EgoFollowing(ego: Vehicle, lead: Vehicle) {
+    ego != lead;
+    Node.id(ego, egoId);
+    check(egoId.equals("veh-ego"));
+
+    Node.x(ego, ex);
+    Node.y(ego, ey);
+    Node.heading(ego, eh);
+    Node.x(lead, lx);
+    Node.y(lead, ly);
+
+    Vehicle.speed(ego, eSpeed);
+    Vehicle.speed(lead, lSpeed);
+    check(eSpeed > 0.5);
+    check(lSpeed > 0.5);
+
+    check(((ex - lx)*(ex - lx) + (ey - ly)*(ey - ly)) >= 25.0 &&
+          ((ex - lx)*(ex - lx) + (ey - ly)*(ey - ly)) <= 2500.0);
+
+    check(scenegraphhelper.calculateAngle(ex, ey, eh, lx, ly) >= -0.7854 &&
+          scenegraphhelper.calculateAngle(ex, ey, eh, lx, ly) <= 0.7854);
+}
+
+// Remove the "following" edge when EgoFollowing no longer holds.
+pattern RemoveEgoFollowing(ego: Vehicle, lead: Vehicle) {
+    Edge.source(edge, ego);
+    Edge.target(edge, lead);
+    Edge.type(edge, edgeType);
+    check(edgeType.equals("following"));
+
+    neg find EgoFollowing(ego, lead);
+}

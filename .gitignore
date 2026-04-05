@@ -4,12 +4,13 @@ bin/
 src-gen/
 
 # CARLA Installation (Large Files - ~20GB)
-CARLA_0.9.16/
+CARLAUE4/
+Engine/
 CARLA_0.9.16.zip
-
+AdditionalMaps_0.9.16.zip
+.gitignore
 # Output data
 data/
-
 # Python Virtual Environment
 .venv/
 venv/

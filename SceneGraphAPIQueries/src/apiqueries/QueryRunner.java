@@ -42,6 +42,8 @@ import queries.LeftFront;
 import queries.FrontLeft;
 import queries.VehicleOnLane;
 import queries.RemoveVehicleOnLane;
+import queries.EgoFollowing;
+import queries.RemoveEgoFollowing;
 
 public class QueryRunner implements IApplication {
 
@@ -181,6 +183,20 @@ public class QueryRunner implements IApplication {
             .action(match -> removeLane(match.getVehicle(), match.getLane()))
             .build();
 
+        // Ego longitudinal following
+        BatchTransformationRule<EgoFollowing.Match, EgoFollowing.Matcher> egoFollowingRule =
+            ruleFactory.createRule(EgoFollowing.instance())
+            .name("EgoFollowingRule")
+            .action(match -> applyFollowing(match.getEgo(), match.getLead()))
+            .build();
+
+        // Remove stale following edge when EgoFollowing no longer holds
+        BatchTransformationRule<RemoveEgoFollowing.Match, RemoveEgoFollowing.Matcher> removeEgoFollowingRule =
+            ruleFactory.createRule(RemoveEgoFollowing.instance())
+            .name("RemoveEgoFollowingRule")
+            .action(match -> removeFollowing(match.getEgo(), match.getLead()))
+            .build();
+
         // Main loop
         while (true) {
             long start = System.nanoTime();
@@ -226,6 +242,8 @@ public class QueryRunner implements IApplication {
             statements.fireAllCurrent(frontLeftRule);
             statements.fireAllCurrent(vehicleOnLaneRule);
             statements.fireAllCurrent(removeVehicleOnLaneRule);
+            statements.fireAllCurrent(egoFollowingRule);
+            statements.fireAllCurrent(removeEgoFollowingRule);
 
             saveResource(resource);
 
@@ -327,6 +345,44 @@ public class QueryRunner implements IApplication {
             scene.getEdges().remove(e);
             System.out.println("Removed lane edge: " +
                 vehicle.getId() + " -> " + lane.getId());
+        });
+    }
+
+    private void applyFollowing(Vehicle ego, Vehicle lead) {
+
+        Scene scene = (Scene) ego.eContainer();
+
+        Edge edge = scene.getEdges().stream()
+            .filter(e -> "following".equals(e.getType()))
+            .filter(e -> e.getSource() == ego && e.getTarget() == lead)
+            .findFirst()
+            .orElse(null);
+
+        if (edge == null) {
+            edge = SceneGraphModelFactory.eINSTANCE.createEdge();
+            edge.setSource(ego);
+            edge.setTarget(lead);
+            edge.setType("following");
+            scene.getEdges().add(edge);
+
+            System.out.println("[EgoFollowing] " + ego.getId() +
+                " is longitudinally following " + lead.getId());
+        }
+    }
+
+    private void removeFollowing(Vehicle ego, Vehicle lead) {
+
+        Scene scene = (Scene) ego.eContainer();
+
+        List<Edge> toRemove = scene.getEdges().stream()
+            .filter(e -> "following".equals(e.getType()))
+            .filter(e -> e.getSource() == ego && e.getTarget() == lead)
+            .toList();
+
+        toRemove.forEach(e -> {
+            scene.getEdges().remove(e);
+            System.out.println("[EgoFollowing] Removed following edge: " +
+                ego.getId() + " -> " + lead.getId());
         });
     }
 
