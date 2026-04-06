@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from carla_scenegraph_export import Edge, Node, collect_carla_nodes, collect_mock_nodes, write_scene_xmi
+from rss_safety_check import RSSParams, check_rss_safety
 
 try:
     portalocker = importlib.import_module("portalocker")
@@ -45,7 +46,9 @@ def normalize_node(node: Node) -> Dict[str, object]:
     }
 
 
-def edge_key(edge: Edge, nodes: List[Node]) -> Tuple[str, str, str, str, str]:
+def edge_key(edge: Edge, nodes: List[Node]):
+    if not (0 <= edge.source_index < len(nodes) and 0 <= edge.target_index < len(nodes)):
+        return None
     src = nodes[edge.source_index].external_id
     dst = nodes[edge.target_index].external_id
     if src > dst:
@@ -80,7 +83,7 @@ def diff_nodes(prev: Dict[str, Dict[str, object]], curr_nodes: List[Node]) -> Di
 
 
 def diff_edges(prev: Set[Tuple[str, str, str, str, str]], curr_edges: List[Edge], curr_nodes: List[Node]) -> Dict[str, List[object]]:
-    curr = {edge_key(edge, curr_nodes) for edge in curr_edges}
+    curr = {k for edge in curr_edges if (k := edge_key(edge, curr_nodes)) is not None}
     added = sorted(curr - prev)
     removed = sorted(prev - curr)
     return {
@@ -177,47 +180,109 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
     visible_nodes = [node_by_id[node_id] for node_id in sorted(visible_node_ids)]
     mapped = to_view_space(visible_nodes)
 
+    # Edge style lookup: type -> (stroke color, stroke width, dash)
+    edge_styles = {
+        "rss_longitudinal": ("#dc2626", 5.0, ""),
+        "rss_lateral":      ("#ea580c", 5.0, ""),
+        "following":        ("#7c3aed", 3.5, "12,6"),
+        "vehicle":          ("#738497", 2.5, ""),
+        "lane":             ("#94a3b8", 1.8, "6,4"),
+    }
+
+    # Collect RSS violation info for the panel
+    rss_violations: List[Dict[str, str]] = []
+
+    # Python-side RSS checks (works without VIATRA/Eclipse)
+    vehicles = [n for n in nodes if n.node_type == "Vehicle"]
+    _rss_params = RSSParams()
+    for i, ego in enumerate(vehicles):
+        others = vehicles[:i] + vehicles[i+1:]
+        for v in check_rss_safety(ego, others, _rss_params):
+            rss_violations.append({
+                "type": "Longitudinal" if v.rule == "longitudinal" else "Lateral",
+                "source": v.ego_id,
+                "target": v.other_id,
+                "actual": f"{v.actual_distance:.1f}",
+                "safe": f"{v.safe_distance:.1f}",
+            })
+    # Deduplicate (A->B and B->A may both fire)
+    _seen_pairs: Set[Tuple[str, str, str]] = set()
+    _deduped: List[Dict[str, str]] = []
+    for v in rss_violations:
+        pair = (v["type"], min(v["source"], v["target"]), max(v["source"], v["target"]))
+        if pair not in _seen_pairs:
+            _seen_pairs.add(pair)
+            _deduped.append(v)
+    rss_violations = _deduped
+
     line_parts: List[str] = []
     edge_text_parts: List[str] = []
     visible_edge_count = 0
+    label_offset_counter: Dict[str, int] = {}  # per-edge-midpoint offset to stagger labels
+
     for edge, src, dst in iter_valid_edge_endpoints(edges, nodes):
         if src not in visible_node_ids or dst not in visible_node_ids:
             continue
         x1, y1 = mapped[src]
         x2, y2 = mapped[dst]
+
+        stroke, sw, dash = edge_styles.get(edge.edge_type, ("#738497", 2.5, ""))
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         line_parts.append(
-            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#738497" stroke-opacity="0.80" stroke-width="4.2" />'
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            f'stroke="{stroke}" stroke-opacity="0.85" stroke-width="{sw}"{dash_attr} />'
         )
 
-        label_parts: List[str] = [edge.edge_type]
-        if edge.distance:
-            label_parts.append(f"dist={edge.distance}")
-        if edge.spatial:
-            label_parts.append(f"spatial={edge.spatial}")
-
-        label = " | ".join(label_parts)
-        mx = (x1 + x2) / 2.0
-        my = (y1 + y2) / 2.0
-
-        dx = x2 - x1
-        dy = y2 - y1
-        length = math.hypot(dx, dy)
-        if length < 1e-6:
-            nx, ny = 0.0, -1.0
+        # Build label
+        if edge.edge_type.startswith("rss_"):
+            label = edge.edge_type.replace("_", " ").upper()
+            rss_violations.append({
+                "type": "Longitudinal" if "longitudinal" in edge.edge_type else "Lateral",
+                "source": src,
+                "target": dst,
+            })
+        elif edge.edge_type == "vehicle":
+            parts = []
+            if edge.distance:
+                parts.append(edge.distance)
+            if edge.spatial:
+                parts.append(edge.spatial)
+            label = " | ".join(parts) if parts else "vehicle"
+        elif edge.edge_type == "following":
+            label = "following"
         else:
-            nx, ny = -dy / length, dx / length
+            label = edge.edge_type
 
-        src_type = node_by_id[src].node_type
-        dst_type = node_by_id[dst].node_type
-        if src_type == "Vehicle" or dst_type == "Vehicle":
-            offset = 40.0
-        else:
-            offset = 28.0
+        # Skip text label for lane edges - dashed gray style is enough
+        if edge.edge_type != "lane":
+            t = 0.35
+            lx = x1 + (x2 - x1) * t
+            ly = y1 + (y2 - y1) * t
 
-        edge_text_parts.append(
-            f'<text x="{mx + nx * offset:.1f}" y="{my + ny * offset:.1f}" font-size="28" fill="#334155" '
-            f'stroke="#ffffff" stroke-width="1.4" paint-order="stroke">{label}</text>'
-        )
+            mid_key = f"{int(lx/30)},{int(ly/30)}"
+            stagger = label_offset_counter.get(mid_key, 0)
+            label_offset_counter[mid_key] = stagger + 1
+
+            dx = x2 - x1
+            dy = y2 - y1
+            length = math.hypot(dx, dy)
+            if length < 1e-6:
+                nx, ny = 0.0, -1.0
+            else:
+                nx, ny = -dy / length, dx / length
+
+            base_offset = 18.0
+            offset = base_offset + stagger * 20.0
+
+            font_size = 20
+            text_fill = stroke if edge.edge_type.startswith("rss_") else "#334155"
+
+            edge_text_parts.append(
+                f'<text x="{lx + nx * offset:.1f}" y="{ly + ny * offset:.1f}" '
+                f'font-size="{font_size}" font-weight="{"700" if edge.edge_type.startswith("rss_") else "400"}" '
+                f'fill="{text_fill}" stroke="#ffffff" stroke-width="2.5" paint-order="stroke" '
+                f'text-anchor="middle">{label}</text>'
+            )
         visible_edge_count += 1
 
     circle_parts: List[str] = []
@@ -226,54 +291,118 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
         node_id = node.external_id
         x, y = mapped[node_id]
         color = node_colors.get(node.node_type, "#2ca02c")
+
+        if node.node_type == "Vehicle":
+            circle_parts.append(
+                f'<rect x="{x - 10:.1f}" y="{y - 10:.1f}" width="20" height="20" rx="4" fill="{color}" />'
+            )
+            # Speed label under the vehicle
+            speed_str = f"{node.speed:.1f} m/s" if node.speed and node.speed > 0.01 else "stopped"
+            circle_parts.append(
+                f'<text x="{x:.1f}" y="{y + 36:.1f}" font-size="14" fill="#64748b" text-anchor="middle">{speed_str}</text>'
+            )
+        else:
+            circle_parts.append(
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="10" fill="{color}" />'
+            )
+
+        # Node label - offset above-left for vehicles, above for roads
+        label_text = f"{node.node_type}:{node_id}"
         circle_parts.append(
-            f'<rect x="{x - 9:.1f}" y="{y - 15:.1f}" width="18" height="30" rx="4" fill="{color}" />'
-            if node.node_type == "Vehicle"
-            else f'<circle cx="{x:.1f}" cy="{y:.1f}" r="14" fill="{color}" />'
+            f'<text x="{x:.1f}" y="{y - 20:.1f}" font-size="16" fill="#1a1a1a" '
+            f'text-anchor="middle" font-weight="500">{label_text}</text>'
         )
 
-        circle_parts.append(
-            f'<text x="{x + 26:.1f}" y="{y - 26:.1f}" font-size="34" fill="#1a1a1a">{node.node_type}:{node_id}</text>'
-        )
+    # RSS panel rows
+    rss_rows = ""
+    if rss_violations:
+        for v in rss_violations:
+            badge_color = "#dc2626" if v["type"] == "Longitudinal" else "#ea580c"
+            dist_info = ""
+            if "actual" in v and "safe" in v:
+                dist_info = f' <span style="font-size:11px;color:#64748b;">({v["actual"]}m / {v["safe"]}m safe)</span>'
+            rss_rows += (
+                f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
+                f'<span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;'
+                f'font-size:12px;font-weight:600;">{v["type"]}</span>'
+                f'<span style="font-size:13px;color:#1e293b;">{v["source"]} &rarr; {v["target"]}{dist_info}</span>'
+                f'</div>'
+            )
+    else:
+        rss_rows = '<div style="color:#16a34a;font-size:14px;font-weight:600;">No RSS violations</div>'
+
+    vehicle_count = sum(1 for n in nodes if n.node_type == "Vehicle")
+    rss_lon_count = sum(1 for v in rss_violations if v["type"] == "Longitudinal")
+    rss_lat_count = sum(1 for v in rss_violations if v["type"] == "Lateral")
 
     html = f"""<!doctype html>
 <html>
 <head>
-    <meta charset=\"utf-8\" />
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-    <meta http-equiv=\"refresh\" content=\"0.1\" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="0.1" />
     <title>Scene Graph Live View</title>
     <style>
         html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; }}
         body {{ font-family: Segoe UI, Tahoma, sans-serif; background: #f3f6f9; }}
         .wrap {{
-            width: 100vw;
-            height: 100vh;
-            margin: 0;
-            background: white;
-            border: 0;
-            border-radius: 0;
-            display: flex;
-            flex-direction: column;
-            box-sizing: border-box;
+            width: 100vw; height: 100vh; margin: 0; background: white;
+            display: flex; flex-direction: column; box-sizing: border-box;
         }}
-        .head {{ padding: 18px 22px; border-bottom: 1px solid #e5e7eb; flex: 0 0 auto; }}
-        .head strong {{ font-size: 36px; font-weight: 700; }}
-        .meta {{ color: #3f4b5b; font-size: 28px; margin-top: 6px; }}
-        svg {{ display: block; width: 100%; height: 100%; flex: 1 1 auto; background: #fcfdff; }}
+        .head {{
+            padding: 12px 18px; border-bottom: 1px solid #e5e7eb;
+            flex: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start;
+        }}
+        .head-left {{ flex: 1; }}
+        .head-left strong {{ font-size: 22px; font-weight: 700; }}
+        .meta {{ color: #3f4b5b; font-size: 14px; margin-top: 4px; }}
+        .rss-panel {{
+            flex: 0 0 auto; min-width: 280px; max-width: 400px;
+            background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+            padding: 10px 14px; margin-left: 16px;
+        }}
+        .rss-panel.safe {{ background: #f0fdf4; border-color: #bbf7d0; }}
+        .rss-title {{
+            font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 6px;
+            display: flex; align-items: center; gap: 6px;
+        }}
+        .rss-count {{ font-size: 12px; color: #64748b; margin-bottom: 4px; }}
+        svg {{ display: block; width: 100%; flex: 1 1 auto; background: #fcfdff; }}
+        .legend {{
+            display: flex; gap: 16px; padding: 6px 18px; border-top: 1px solid #e5e7eb;
+            flex: 0 0 auto; font-size: 12px; color: #64748b; align-items: center;
+        }}
+        .legend-item {{ display: flex; align-items: center; gap: 4px; }}
+        .legend-swatch {{ width: 20px; height: 3px; border-radius: 2px; }}
     </style>
 </head>
 <body>
-    <div class=\"wrap\">
-        <div class=\"head\">
-            <strong>CARLA Scene Graph Live View</strong>
-            <div class=\"meta\">Tick: {tick} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count} | Auto-refresh: 100ms</div>
+    <div class="wrap">
+        <div class="head">
+            <div class="head-left">
+                <strong>CARLA Scene Graph Live View</strong>
+                <div class="meta">Tick: {tick} | Vehicles: {vehicle_count} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count} | Auto-refresh: 100ms</div>
+            </div>
+            <div class="rss-panel {'safe' if not rss_violations else ''}">
+                <div class="rss-title">
+                    {'&#x26A0;' if rss_violations else '&#x2705;'} RSS Safety Status
+                </div>
+                <div class="rss-count">Longitudinal: {rss_lon_count} | Lateral: {rss_lat_count}</div>
+                {rss_rows}
+            </div>
         </div>
-        <svg viewBox=\"0 0 1600 1000\" preserveAspectRatio=\"none\" xmlns=\"http://www.w3.org/2000/svg\">
+        <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
             {''.join(line_parts)}
-                {''.join(edge_text_parts)}
+            {''.join(edge_text_parts)}
             {''.join(circle_parts)}
         </svg>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-swatch" style="background:#dc2626;height:4px;"></div> RSS Longitudinal</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#ea580c;height:4px;"></div> RSS Lateral</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#7c3aed;"></div> Following</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#738497;"></div> Vehicle proximity</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#94a3b8;" ></div> Lane</div>
+        </div>
     </div>
 </body>
 </html>
@@ -433,7 +562,7 @@ def main() -> int:
         persist_event(event, events_path, state_path)
 
         prev_nodes = {node.external_id: normalize_node(node) for node in nodes}
-        prev_edges = {edge_key(edge, nodes) for edge in edges}
+        prev_edges = {k for edge in edges if (k := edge_key(edge, nodes)) is not None}
 
         print(
             f"tick={tick} nodes={len(nodes)} edges={len(edges)} snapshot={latest_path}",

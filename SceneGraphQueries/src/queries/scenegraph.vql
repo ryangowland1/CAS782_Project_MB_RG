@@ -247,3 +247,82 @@ pattern RemoveEgoFollowing(ego: Vehicle, lead: Vehicle) {
 
     neg find EgoFollowing(ego, lead);
 }
+
+// ===================================================================
+// RSS Safe-Distance Violation Patterns
+// (AV_Safety_Frameworks.pdf, Equations 1 & 3)
+// ===================================================================
+
+// RssLongitudinalViolation: the ego vehicle is following a lead vehicle
+// within the same lane at a distance below the RSS minimum safe
+// longitudinal distance.
+//
+// Prerequisites:
+//   - Both vehicles must have speed/velocity data (speed > 0 for ego)
+//   - Lead must be in front of ego (longitudinal > 0)
+//   - Lead must be roughly in the same lane (|lateral offset| < 2 m)
+//   - Measured longitudinal gap < RSS d_min^lon
+pattern RssLongitudinalViolation(ego: Vehicle, other: Vehicle) {
+    ego != other;
+
+    Node.x(ego, ex);
+    Node.y(ego, ey);
+    Node.heading(ego, eh);
+    Vehicle.vx(ego, evx);
+    Vehicle.vy(ego, evy);
+
+    Node.x(other, ox);
+    Node.y(other, oy);
+    Vehicle.vx(other, ovx);
+    Vehicle.vy(other, ovy);
+
+    // sameLaneThreshold = 2.0 m
+    check(scenegraphhelper.rssLongitudinalViolation(
+        ex, ey, eh, evx, evy, ox, oy, ovx, ovy, 2.0));
+}
+
+// Remove the "rss_longitudinal" edge when the violation no longer holds.
+pattern RemoveRssLongitudinalViolation(ego: Vehicle, other: Vehicle) {
+    Edge.source(edge, ego);
+    Edge.target(edge, other);
+    Edge.type(edge, edgeType);
+    check(edgeType.equals("rss_longitudinal"));
+
+    neg find RssLongitudinalViolation(ego, other);
+}
+
+// RssLateralViolation: a vehicle beside ego (adjacent lane) is within
+// the RSS minimum safe lateral distance.
+//
+// Prerequisites:
+//   - Beside classification: 1.0 < |lateral offset| < 5.0 m
+//   - Longitudinally close: |longitudinal offset| < 15.0 m
+//   - Measured lateral gap < RSS d_min^lat
+pattern RssLateralViolation(ego: Vehicle, other: Vehicle) {
+    ego != other;
+
+    Node.x(ego, ex);
+    Node.y(ego, ey);
+    Node.heading(ego, eh);
+    Vehicle.vx(ego, evx);
+    Vehicle.vy(ego, evy);
+
+    Node.x(other, ox);
+    Node.y(other, oy);
+    Vehicle.vx(other, ovx);
+    Vehicle.vy(other, ovy);
+
+    // lateralMin=1.0, lateralMax=5.0, lonMax=15.0
+    check(scenegraphhelper.rssLateralViolation(
+        ex, ey, eh, evx, evy, ox, oy, ovx, ovy, 1.0, 5.0, 15.0));
+}
+
+// Remove the "rss_lateral" edge when the violation no longer holds.
+pattern RemoveRssLateralViolation(ego: Vehicle, other: Vehicle) {
+    Edge.source(edge, ego);
+    Edge.target(edge, other);
+    Edge.type(edge, edgeType);
+    check(edgeType.equals("rss_lateral"));
+
+    neg find RssLateralViolation(ego, other);
+}

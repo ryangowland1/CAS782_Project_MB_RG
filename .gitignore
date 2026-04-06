@@ -8,6 +8,10 @@ CARLAUE4/
 Engine/
 CARLA_0.9.16.zip
 AdditionalMaps_0.9.16.zip
+CarlaUE4.exe
+
+# HD Maps (Large Binary Files - 60-380 MB each)
+HDMaps/*.pcd
 .gitignore
 # Output data
 data/

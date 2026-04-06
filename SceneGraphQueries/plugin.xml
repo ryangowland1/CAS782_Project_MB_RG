@@ -17,6 +17,12 @@
       <query-specification fqn="queries.FrontLeft"/>
       <query-specification fqn="queries.VehicleOnLane"/>
       <query-specification fqn="queries.RemoveVehicleOnLane"/>
+      <query-specification fqn="queries.EgoFollowing"/>
+      <query-specification fqn="queries.RemoveEgoFollowing"/>
+      <query-specification fqn="queries.RssLongitudinalViolation"/>
+      <query-specification fqn="queries.RemoveRssLongitudinalViolation"/>
+      <query-specification fqn="queries.RssLateralViolation"/>
+      <query-specification fqn="queries.RemoveRssLateralViolation"/>
     </group>
   </extension>
 </plugin>

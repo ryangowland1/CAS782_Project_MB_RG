@@ -22,6 +22,8 @@
 
   <eClassifiers xsi:type="ecore:EClass" name="Vehicle" eSuperTypes="#//Node">
     <eStructuralFeatures xsi:type="ecore:EAttribute" name="speed" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EDouble"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="vx" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EDouble"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="vy" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EDouble"/>
   </eClassifiers>
 
   <eClassifiers xsi:type="ecore:EClass" name="Pedestrian" eSuperTypes="#//Node"/>

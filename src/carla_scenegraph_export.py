@@ -42,6 +42,8 @@ class Node:
     speed: Optional[float] = None
     length: Optional[float] = None
     width: Optional[float] = None
+    vx: Optional[float] = None
+    vy: Optional[float] = None
 
 
 @dataclass
@@ -102,8 +104,10 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
 
         if actor_type.startswith("vehicle."):
             node_type, node_speed = "Vehicle", speed
+            node_vx, node_vy = velocity.x, velocity.y
         elif actor_type.startswith("walker.pedestrian."):
             node_type, node_speed = "Pedestrian", None
+            node_vx, node_vy = None, None
         else:
             continue
 
@@ -116,6 +120,8 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
                 z=transform.location.z,
                 heading=heading,
                 speed=node_speed,
+                vx=node_vx,
+                vy=node_vy,
             )
         )
     
@@ -287,6 +293,12 @@ def _node_attributes(node: Node) -> dict:
 
     if node.node_type == "Vehicle" and node.speed is not None:
         attrs["speed"] = f"{node.speed:.6f}"
+
+    if node.node_type == "Vehicle":
+        if node.vx is not None:
+            attrs["vx"] = f"{node.vx:.6f}"
+        if node.vy is not None:
+            attrs["vy"] = f"{node.vy:.6f}"
 
     if node.node_type == "RoadSegment":
         if node.length is not None:

@@ -2,6 +2,7 @@ package apiqueries;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
@@ -41,14 +42,18 @@ import queries.LeftRear;
 import queries.LeftFront;
 import queries.FrontLeft;
 import queries.VehicleOnLane;
-import queries.RemoveVehicleOnLane;
 import queries.EgoFollowing;
 import queries.RemoveEgoFollowing;
+import queries.RssLongitudinalViolation;
+import queries.RemoveRssLongitudinalViolation;
+import queries.RssLateralViolation;
+import queries.RemoveRssLateralViolation;
+import queries.RemoveVehicleOnLane;
 
 public class QueryRunner implements IApplication {
 
-    private static final String MODEL_PATH =
-        "C:\\Users\\marko\\Documents\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
+    private static fRyan\\Documents\\McMaster MASc\\2025-26\\Classes\\CAS782\\Final ProjectL_PATH =
+        "C:\\Users\\Ryan\\Documents\\McMaster MASc\\2025-26\\Classes\\CAS782\\Final Project\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
@@ -103,7 +108,7 @@ public class QueryRunner implements IApplication {
                     .filter(e -> "vehicle".equals(e.getType()))
                     .filter(e -> (e.getSource() == v1 && e.getTarget() == v2) ||
                                  (e.getSource() == v2 && e.getTarget() == v1))
-                    .toList();
+                    .collect(Collectors.toList());
 
                 toRemove.forEach(e -> {
                     scene.getEdges().remove(e);
@@ -182,8 +187,7 @@ public class QueryRunner implements IApplication {
             .name("RemoveVehicleOnLaneRule")
             .action(match -> removeLane(match.getVehicle(), match.getLane()))
             .build();
-
-        // Ego longitudinal following
+Ego longitudinal following
         BatchTransformationRule<EgoFollowing.Match, EgoFollowing.Matcher> egoFollowingRule =
             ruleFactory.createRule(EgoFollowing.instance())
             .name("EgoFollowingRule")
@@ -197,6 +201,35 @@ public class QueryRunner implements IApplication {
             .action(match -> removeFollowing(match.getEgo(), match.getLead()))
             .build();
 
+        // RSS Longitudinal Violation
+        BatchTransformationRule<RssLongitudinalViolation.Match, RssLongitudinalViolation.Matcher> rssLonRule =
+            ruleFactory.createRule(RssLongitudinalViolation.instance())
+            .name("RssLongitudinalViolationRule")
+            .action(match -> applyRssEdge(match.getEgo(), match.getOther(), "rss_longitudinal"))
+            .build();
+
+        // Remove stale RSS longitudinal edge
+        BatchTransformationRule<RemoveRssLongitudinalViolation.Match, RemoveRssLongitudinalViolation.Matcher> removeRssLonRule =
+            ruleFactory.createRule(RemoveRssLongitudinalViolation.instance())
+            .name("RemoveRssLongitudinalViolationRule")
+            .action(match -> removeRssEdge(match.getEgo(), match.getOther(), "rss_longitudinal"))
+            .build();
+
+        // RSS Lateral Violation
+        BatchTransformationRule<RssLateralViolation.Match, RssLateralViolation.Matcher> rssLatRule =
+            ruleFactory.createRule(RssLateralViolation.instance())
+            .name("RssLateralViolationRule")
+            .action(match -> applyRssEdge(match.getEgo(), match.getOther(), "rss_lateral"))
+            .build();
+
+        // Remove stale RSS lateral edge
+        BatchTransformationRule<RemoveRssLateralViolation.Match, RemoveRssLateralViolation.Matcher> removeRssLatRule =
+            ruleFactory.createRule(RemoveRssLateralViolation.instance())
+            .name("RemoveRssLateralViolationRule")
+            .action(match -> removeRssEdge(match.getEgo(), match.getOther(), "rss_lateral"))
+            .build();
+
+        // 
         // Main loop
         while (true) {
             long start = System.nanoTime();
@@ -241,9 +274,13 @@ public class QueryRunner implements IApplication {
             statements.fireAllCurrent(leftFrontRule);
             statements.fireAllCurrent(frontLeftRule);
             statements.fireAllCurrent(vehicleOnLaneRule);
-            statements.fireAllCurrent(removeVehicleOnLaneRule);
             statements.fireAllCurrent(egoFollowingRule);
             statements.fireAllCurrent(removeEgoFollowingRule);
+            statements.fireAllCurrent(rssLonRule);
+            statements.fireAllCurrent(removeRssLonRule);
+            statements.fireAllCurrent(rssLatRule);
+            statements.fireAllCurrent(removeRssLatRule);
+            statements.fireAllCurrent(removeVehicleOnLaneRule);
 
             saveResource(resource);
 
@@ -339,7 +376,7 @@ public class QueryRunner implements IApplication {
         List<Edge> toRemove = scene.getEdges().stream()
             .filter(e -> "lane".equals(e.getType()))
             .filter(e -> e.getSource() == vehicle && e.getTarget() == lane)
-            .toList();
+            .collect(Collectors.toList());
 
         toRemove.forEach(e -> {
             scene.getEdges().remove(e);
@@ -347,8 +384,7 @@ public class QueryRunner implements IApplication {
                 vehicle.getId() + " -> " + lane.getId());
         });
     }
-
-    private void applyFollowing(Vehicle ego, Vehicle lead) {
+void applyFollowing(Vehicle ego, Vehicle lead) {
 
         Scene scene = (Scene) ego.eContainer();
 
@@ -386,6 +422,45 @@ public class QueryRunner implements IApplication {
         });
     }
 
+    private void applyRssEdge(Vehicle ego, Vehicle other, String edgeType) {
+
+        Scene scene = (Scene) ego.eContainer();
+
+        Edge edge = scene.getEdges().stream()
+            .filter(e -> edgeType.equals(e.getType()))
+            .filter(e -> e.getSource() == ego && e.getTarget() == other)
+            .findFirst()
+            .orElse(null);
+
+        if (edge == null) {
+            edge = SceneGraphModelFactory.eINSTANCE.createEdge();
+            edge.setSource(ego);
+            edge.setTarget(other);
+            edge.setType(edgeType);
+            scene.getEdges().add(edge);
+
+            System.out.println("[RSS] " + edgeType + ": " +
+                ego.getId() + " -> " + other.getId());
+        }
+    }
+
+    private void removeRssEdge(Vehicle ego, Vehicle other, String edgeType) {
+
+        Scene scene = (Scene) ego.eContainer();
+
+        List<Edge> toRemove = scene.getEdges().stream()
+            .filter(e -> edgeType.equals(e.getType()))
+            .filter(e -> e.getSource() == ego && e.getTarget() == other)
+            .toList();
+
+        toRemove.forEach(e -> {
+            scene.getEdges().remove(e);
+            System.out.println("[RSS] Removed " + edgeType + ": " +
+                ego.getId() + " -> " + other.getId());
+        });
+    }
+
+    private 
     private Resource loadResource(ResourceSet rs) {
         int maxAttempts = 40;
 

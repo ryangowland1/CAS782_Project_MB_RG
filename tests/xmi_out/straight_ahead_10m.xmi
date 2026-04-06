@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8'?>
+<scenegraph:Scene xmlns:scenegraph="http://cas782/scenegraph" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmi:version="2.0" name="Test_straight_ahead_10m">
+  <nodes xsi:type="scenegraph:Vehicle" id="veh-ego" x="0.000000" y="0.000000" z="0.000000" heading="0.000000" speed="10.000000" />
+  <nodes xsi:type="scenegraph:Vehicle" id="veh-lead" x="10.000000" y="0.000000" z="0.000000" heading="0.000000" speed="8.000000" />
+</scenegraph:Scene>

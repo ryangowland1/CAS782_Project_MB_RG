@@ -23,6 +23,8 @@
     </genClasses>
     <genClasses ecoreClass="sceneGraphModel.ecore#//Vehicle">
       <genFeatures createChild="false" ecoreFeature="ecore:EAttribute sceneGraphModel.ecore#//Vehicle/speed"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute sceneGraphModel.ecore#//Vehicle/vx"/>
+      <genFeatures createChild="false" ecoreFeature="ecore:EAttribute sceneGraphModel.ecore#//Vehicle/vy"/>
     </genClasses>
     <genClasses ecoreClass="sceneGraphModel.ecore#//Pedestrian"/>
     <genClasses ecoreClass="sceneGraphModel.ecore#//RoadSegment">

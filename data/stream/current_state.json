@@ -1,32 +1,13 @@
 {
-  "timestamp": "2026-03-09T03:24:28.720188+00:00",
-  "tick": 2922,
-  "snapshot": "data/stream/snapshots/snapshot_002922.xmi",
-  "node_count": 5,
+  "timestamp": "2026-04-06T02:05:44.880649+00:00",
+  "tick": 19707,
+  "snapshot": "data/stream/latest_snapshot.xmi",
+  "node_count": 168,
   "edge_count": 0,
   "node_changes": {
     "added": [],
     "removed": [],
-    "updated": [
-      {
-        "before": {
-          "node_type": "Vehicle",
-          "external_id": "32",
-          "x": 120.2729,
-          "y": 28.6189,
-          "z": 0.1313,
-          "speed": 0.0003
-        },
-        "after": {
-          "node_type": "Vehicle",
-          "external_id": "32",
-          "x": 120.273,
-          "y": 28.619,
-          "z": 0.1313,
-          "speed": 0.0068
-        }
-      }
-    ]
+    "updated": []
   },
   "edge_changes": {
     "added": [],
