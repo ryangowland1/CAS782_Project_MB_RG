@@ -6,7 +6,7 @@ Spawns two vehicles:
   1. Lead vehicle - moves in a straight line at constant speed
   2. Ego vehicle - automatically follows the lead vehicle maintaining distance
 
-Duration: 1800 seconds with live position updates every 2 seconds
+Duration: 3600 seconds with live position updates every 2 seconds
 Output: Real-time actor positions for scene graph generation
 """
 
@@ -63,7 +63,43 @@ def spawn_ahead(transform, distance_meters):
     return carla.Transform(location, transform.rotation)
 
 
-def choose_straight_successor(waypoint, lookahead_meters):
+def get_left_lane_spawn(world_map, initial_location):
+    """Get a spawn transform on the left lane from an initial location.
+    
+    Attempts to find the left lane for the given location,
+    moving left across lanes until reaching the leftmost lane.
+    """
+    waypoint = world_map.get_waypoint(initial_location, project_to_road=True, lane_type=carla.LaneType.Driving)
+    if waypoint is None:
+        return None
+    
+    current_waypoint = waypoint
+    left_waypoint = current_waypoint.get_left_lane()
+    while left_waypoint is not None and left_waypoint.lane_type == carla.LaneType.Driving:
+        current_waypoint = left_waypoint
+        left_waypoint = current_waypoint.get_left_lane()
+    
+    location = current_waypoint.transform.location
+    return carla.Transform(
+        carla.Location(
+            x=location.x,
+            y=location.y,
+            z=location.z + 0.5,
+        ),
+        current_waypoint.transform.rotation,
+    )
+
+
+def yaw_delta_degrees(base_yaw, candidate_yaw):
+    return abs((candidate_yaw - base_yaw + 180.0) % 360.0 - 180.0)
+
+
+def choose_straight_successor(waypoint, lookahead_meters, max_turn_degrees=15.0):
+    """Choose the next waypoint that continues most straightly.
+    
+    Strongly prefers straight sections (< max_turn_degrees) to keep on highways.
+    If no straight option exists, picks the straightest available.
+    """
     options = waypoint.next(lookahead_meters)
     if not options:
         return None
@@ -71,10 +107,42 @@ def choose_straight_successor(waypoint, lookahead_meters):
     base_yaw = waypoint.transform.rotation.yaw
 
     def yaw_delta(candidate):
-        delta = (candidate.transform.rotation.yaw - base_yaw + 180.0) % 360.0 - 180.0
-        return abs(delta)
+        return yaw_delta_degrees(base_yaw, candidate.transform.rotation.yaw)
 
+    # First try to find nearly-straight continuations
+    straight_options = [opt for opt in options if yaw_delta(opt) <= max_turn_degrees]
+    if straight_options:
+        return min(straight_options, key=yaw_delta)
+    
+    # Fall back to straightest available
     return min(options, key=yaw_delta)
+
+
+def find_back_straight_spawn(world_map, spawn_points, lookahead_meters=20.0, max_turn_degrees=8.0):
+    """Pick a spawn on a long straight section at the back side of the map.
+
+    For Town04, lower Y coordinates correspond to the back straight area.
+    """
+    candidates = []
+    for spawn in spawn_points:
+        waypoint = world_map.get_waypoint(
+            spawn.location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving,
+        )
+        if waypoint is None:
+            continue
+        successor = choose_straight_successor(waypoint, lookahead_meters, max_turn_degrees=max_turn_degrees)
+        if successor is None:
+            continue
+        turn_delta = yaw_delta_degrees(waypoint.transform.rotation.yaw, successor.transform.rotation.yaw)
+        if turn_delta <= max_turn_degrees:
+            candidates.append(spawn)
+
+    if not candidates:
+        return spawn_points[0]
+
+    return min(candidates, key=lambda sp: sp.location.y)
 
 
 def build_follow_camera_transform(vehicle_transform, follow_distance=5.8, height=4.6, pitch=-13.0):
@@ -161,8 +229,26 @@ def pace_loop_with_camera_updates(
 def main():
     # Connect to CARLA
     client = carla.Client('127.0.0.1', 2000)
-    client.set_timeout(10.0)
-    world = client.get_world()
+    client.set_timeout(60.0)
+    
+    # Load Town04
+    print("=" * 70)
+    print("CARLA Scenario: Ego Vehicle Following Lead Vehicle")
+    print("=" * 70)
+    print()
+    
+    # Check if Town04 is already loaded
+    current_map = client.get_world().get_map().name
+    if current_map == 'Town04':
+        print("Town04 is already loaded")
+        world = client.get_world()
+    else:
+        print(f"Current map: {current_map}")
+        print("Loading Town04...")
+        world = client.load_world('Town04')
+        print("✓ Town04 loaded")
+    print()
+    
     original_settings = world.get_settings()
     sync_settings = world.get_settings()
     sync_settings.synchronous_mode = False
@@ -171,38 +257,51 @@ def main():
     tm.set_synchronous_mode(False)
     tm.set_global_distance_to_leading_vehicle(0.5)
     
-    print("=" * 70)
-    print("CARLA Scenario: Ego Vehicle Following Lead Vehicle")
-    print("=" * 70)
-    print()
-    
     # Get available vehicle blueprints
     bp_lib = world.get_blueprint_library()
     vehicle_bps = bp_lib.filter('vehicle.*')
     
     # Get spawn points
     spawn_points = world.get_map().get_spawn_points()
-    if len(spawn_points) < 2:
+    if len(spawn_points) < 1:
         print("ERROR: Not enough spawn points!")
         return
     
-    # Spawn ego vehicle first, then spawn lead vehicle ahead of ego.
+    world_map = world.get_map()
+    
+    # Spawn ego vehicle on the back straight, then shift to the left lane.
     ego_bp = vehicle_bps[0]
-    ego_spawn = spawn_points[0]
+    ego_initial_spawn = find_back_straight_spawn(world_map, spawn_points)
+    ego_spawn = get_left_lane_spawn(world_map, ego_initial_spawn.location)
+    if ego_spawn is None:
+        ego_spawn = ego_initial_spawn  # Fallback to default spawn point
+        print("  Using fallback spawn point (default location)")
+    else:
+        print("  Positioned ego on back straight (left lane)")
+    
     ego_vehicle = world.try_spawn_actor(ego_bp, ego_spawn)
     if ego_vehicle is None:
         print("ERROR: Could not spawn ego vehicle")
         return
+    
+    # Mark this vehicle as the ego vehicle for scene graph display
+    ego_vehicle.attributes['role_name'] = 'ego'
 
     lead_bp = vehicle_bps[1]
     lead_vehicle = None
     lead_spawn = None
     for gap in (10.0, 8.0, 6.0, 4.0):
         candidate_spawn = spawn_ahead(ego_spawn, gap)
+        # Try to position lead on left lane as well
+        lead_left_spawn = get_left_lane_spawn(world_map, candidate_spawn.location)
+        if lead_left_spawn is not None:
+            candidate_spawn = lead_left_spawn
         lead_vehicle = world.try_spawn_actor(lead_bp, candidate_spawn)
         if lead_vehicle is not None:
             lead_spawn = candidate_spawn
-            print(f"  Spawned lead {gap:.1f} m ahead of ego")
+            # Mark this vehicle as the lead vehicle for scene graph display
+            lead_vehicle.attributes['role_name'] = 'lead'
+            print(f"  Spawned lead {gap:.1f} m ahead of ego on left lane")
             break
     if lead_vehicle is None:
         print("ERROR: Could not spawn lead vehicle ahead of ego")
@@ -218,14 +317,13 @@ def main():
         max_brake=0.9,
         max_steering=0.45,
     )
-    world_map = world.get_map()
     assert lead_spawn is not None
     lead_waypoint = world_map.get_waypoint(
         lead_spawn.location,
         project_to_road=True,
         lane_type=carla.LaneType.Driving,
     )
-    lead_target_waypoint = None if lead_waypoint is None else choose_straight_successor(lead_waypoint, 10.0)
+    lead_target_waypoint = None if lead_waypoint is None else choose_straight_successor(lead_waypoint, 15.0, max_turn_degrees=12.0)
     lead_target_speed_kmh = 24.0
     print(f"✓ Spawned ego vehicle: {ego_bp.id}")
     print(f"  Position: ({ego_spawn.location.x:.1f}, {ego_spawn.location.y:.1f}, {ego_spawn.location.z:.1f})")
@@ -268,7 +366,7 @@ def main():
     except RuntimeError as exc:
         print(f"  Camera sensor attach failed ({exc}); using smoothed spectator fallback")
     
-    print("Running scenario for 1800 seconds...")
+    print("Running scenario for 3600 seconds...")
     print("Applying PID control in asynchronous mode (real-time paced), printing status every 2 seconds")
     print("-" * 70)
     print()
@@ -291,7 +389,7 @@ def main():
         ego_prev_steer = 0.0
         steer_delta_limit = 0.06
         
-        while time.time() - start_time < 1800:
+        while time.time() - start_time < 3600:
             loop_wall_start = time.perf_counter()
             loop_now = time.time()
 
@@ -313,11 +411,11 @@ def main():
             else:
                 lead_target_speed_kmh = clamp(lead_cruise_speed_kmh + lead_speed_variation_kmh, 10.0, 30.0)
             
-            # Advance lead vehicle along the straightest available branch.
+            # Advance lead vehicle along the straightest available branch (highway-preferring).
             lead_location = lead_vehicle.get_location()
             if lead_target_waypoint is not None and lead_location.distance(lead_target_waypoint.transform.location) < 5.0:
                 lead_waypoint = lead_target_waypoint
-                lead_target_waypoint = choose_straight_successor(lead_waypoint, 10.0)
+                lead_target_waypoint = choose_straight_successor(lead_waypoint, 15.0, max_turn_degrees=12.0)
 
             if lead_target_waypoint is not None:
                 lead_control = lead_controller.run_step(lead_target_speed_kmh, lead_target_waypoint)
@@ -364,7 +462,7 @@ def main():
                 )
                 continue
 
-            preview_waypoint = choose_straight_successor(target_waypoint, 4.0)
+            preview_waypoint = choose_straight_successor(target_waypoint, 8.0, max_turn_degrees=10.0)
             tracking_waypoint = target_waypoint if preview_waypoint is None else preview_waypoint
 
             lead_speed = math.sqrt(lead_vel.x**2 + lead_vel.y**2 + lead_vel.z**2)

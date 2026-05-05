@@ -268,58 +268,89 @@ def check_rss_safety(
         params = RSSParams()
 
     violations: List[RSSViolation] = []
+    
+    # Use gather_rss_checks to get all checks, filter for violations only
+    for chk in gather_rss_checks(ego, vehicles, params):
+        if chk.get("violation"):
+            violations.append(
+                RSSViolation(
+                    rule="longitudinal" if chk["type"] == "Longitudinal" else "lateral",
+                    ego_id=chk["ego_id"],
+                    other_id=chk["other_id"],
+                    actual_distance=chk["actual"],
+                    safe_distance=chk["safe"],
+                    ego_speed=chk["ego_speed"],
+                    other_speed=chk["other_speed"],
+                )
+            )
 
-    # ---- longitudinal (closest vehicle in front) ----
+    return violations
+
+
+def gather_rss_checks(
+    ego: Node,
+    vehicles: List[Node],
+    params: Optional[RSSParams] = None,
+) -> List[dict]:
+    """Return RSS check results (including safe and actual distances) for ego.
+
+    Each returned dict has keys:
+      - type: 'Longitudinal' or 'Lateral'
+      - ego_id, other_id
+      - actual: measured gap (m)
+      - safe: RSS safe distance (m)
+      - ego_speed, other_speed
+      - violation: bool (actual < safe)
+
+    This is useful for reporting checks even when they are not violations.
+    """
+    if params is None:
+        params = RSSParams()
+
+    results: List[dict] = []
+
     front = find_closest_front_vehicle(ego, vehicles, params)
     if front is not None:
         front_v, lon_dist, _lat = front
         _lon, _lat2, ego_lon, _elat, other_lon, _olat = decompose_in_ego_frame(ego, front_v)
 
         d_safe = rss_longitudinal_safe_distance(max(ego_lon, 0.0), max(other_lon, 0.0), params)
+        violation = lon_dist < d_safe
+        results.append({
+            "type": "Longitudinal",
+            "ego_id": ego.external_id,
+            "other_id": front_v.external_id,
+            "actual": lon_dist,
+            "safe": d_safe,
+            "ego_speed": ego.speed or 0.0,
+            "other_speed": front_v.speed or 0.0,
+            "violation": violation,
+        })
 
-        if lon_dist < d_safe:
-            violations.append(
-                RSSViolation(
-                    rule="longitudinal",
-                    ego_id=ego.external_id,
-                    other_id=front_v.external_id,
-                    actual_distance=lon_dist,
-                    safe_distance=d_safe,
-                    ego_speed=ego.speed or 0.0,
-                    other_speed=front_v.speed or 0.0,
-                )
-            )
-
-    # ---- lateral (closest vehicle beside) ----
     beside = find_closest_lateral_vehicle(ego, vehicles, params)
     if beside is not None:
         beside_v, _lon, lat_dist = beside
         _lon2, lat2, _elon, ego_lat, _olon, other_lat = decompose_in_ego_frame(ego, beside_v)
 
-        # Determine closing / opening lateral velocities relative to the gap.
         if lat2 > 0:
-            # other is on the +perp side
-            v_ego_toward = ego_lat       # positive ego_lat => moving toward other
-            v_other_away = other_lat     # positive other_lat => moving away
+            v_ego_toward = ego_lat
+            v_other_away = other_lat
         else:
-            # other is on the -perp side
             v_ego_toward = -ego_lat
             v_other_away = -other_lat
 
         d_safe = rss_lateral_safe_distance(v_ego_toward, v_other_away, params)
         actual_gap = abs(lat2)
+        violation = actual_gap < d_safe
+        results.append({
+            "type": "Lateral",
+            "ego_id": ego.external_id,
+            "other_id": beside_v.external_id,
+            "actual": actual_gap,
+            "safe": d_safe,
+            "ego_speed": ego.speed or 0.0,
+            "other_speed": beside_v.speed or 0.0,
+            "violation": violation,
+        })
 
-        if actual_gap < d_safe:
-            violations.append(
-                RSSViolation(
-                    rule="lateral",
-                    ego_id=ego.external_id,
-                    other_id=beside_v.external_id,
-                    actual_distance=actual_gap,
-                    safe_distance=d_safe,
-                    ego_speed=ego.speed or 0.0,
-                    other_speed=beside_v.speed or 0.0,
-                )
-            )
-
-    return violations
+    return results

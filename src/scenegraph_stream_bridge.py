@@ -17,15 +17,19 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from carla_scenegraph_export import Edge, Node, collect_carla_nodes, collect_mock_nodes, write_scene_xmi
-from rss_safety_check import RSSParams, check_rss_safety
+from rss_safety_check import RSSParams, gather_rss_checks
 
 try:
     portalocker = importlib.import_module("portalocker")
 except ImportError:
     portalocker = None
+
+
+LANE_WIDTH_M = 3.5
+LANE_LENGTH_M = 25.0
 
 
 def now_iso() -> str:
@@ -100,7 +104,7 @@ def to_view_space(nodes: List[Node], width: int = 1600, height: int = 1000) -> D
     count = len(ordered_nodes)
 
     cx = width * 0.5
-    cy = height * 0.55
+    cy = height * 0.44
     mapped: Dict[str, Tuple[float, float]] = {}
 
     if count == 1:
@@ -164,6 +168,14 @@ def to_view_space(nodes: List[Node], width: int = 1600, height: int = 1000) -> D
 def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge], tick: int) -> None:
     node_by_id = {n.external_id: n for n in nodes}
 
+    vehicle_name_by_id = {
+        "147": "ego",
+        "148": "lead",
+    }
+
+    def display_id(node_id: str) -> str:
+        return vehicle_name_by_id.get(node_id, node_id)
+
     connected_lane_ids: Set[str] = {
         node_id
         for _edge, src_id, dst_id in iter_valid_edge_endpoints(edges, nodes)
@@ -182,11 +194,10 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 
     # Edge style lookup: type -> (stroke color, stroke width, dash)
     edge_styles = {
-        "rss_longitudinal": ("#dc2626", 5.0, ""),
-        "rss_lateral":      ("#ea580c", 5.0, ""),
-        "following":        ("#7c3aed", 3.5, "12,6"),
-        "vehicle":          ("#738497", 2.5, ""),
-        "lane":             ("#94a3b8", 1.8, "6,4"),
+        "rss_longitudinal": ("#dc2626", 7.0, ""),
+        "rss_lateral":      ("#ea580c", 7.0, ""),
+        "vehicle":          ("#738497", 4.0, ""),
+        "lane":             ("#94a3b8", 3.0, "6,4"),
     }
 
     # Collect RSS violation info for the panel
@@ -197,13 +208,15 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
     _rss_params = RSSParams()
     for i, ego in enumerate(vehicles):
         others = vehicles[:i] + vehicles[i+1:]
-        for v in check_rss_safety(ego, others, _rss_params):
+        for chk in gather_rss_checks(ego, others, _rss_params):
             rss_violations.append({
-                "type": "Longitudinal" if v.rule == "longitudinal" else "Lateral",
-                "source": v.ego_id,
-                "target": v.other_id,
-                "actual": f"{v.actual_distance:.1f}",
-                "safe": f"{v.safe_distance:.1f}",
+                "check_source": "python",
+                "type": chk["type"],
+                "source": chk["ego_id"],
+                "target": chk["other_id"],
+                "actual": f"{chk['actual']:.1f}",
+                "safe": f"{chk['safe']:.1f}",
+                "violation": bool(chk.get("violation", False)),
             })
     # Deduplicate (A->B and B->A may both fire)
     _seen_pairs: Set[Tuple[str, str, str]] = set()
@@ -226,7 +239,9 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
         x1, y1 = mapped[src]
         x2, y2 = mapped[dst]
 
-        stroke, sw, dash = edge_styles.get(edge.edge_type, ("#738497", 2.5, ""))
+        # Draw connector directly between node centers (natural center alignment)
+
+        stroke, sw, dash = edge_styles.get(edge.edge_type, ("#738497", 4.0, ""))
         dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         line_parts.append(
             f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
@@ -237,6 +252,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
         if edge.edge_type.startswith("rss_"):
             label = edge.edge_type.replace("_", " ").upper()
             rss_violations.append({
+                "check_source": "viatra",
                 "type": "Longitudinal" if "longitudinal" in edge.edge_type else "Lateral",
                 "source": src,
                 "target": dst,
@@ -248,40 +264,33 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
             if edge.spatial:
                 parts.append(edge.spatial)
             label = " | ".join(parts) if parts else "vehicle"
-        elif edge.edge_type == "following":
-            label = "following"
         else:
             label = edge.edge_type
 
         # Skip text label for lane edges - dashed gray style is enough
         if edge.edge_type != "lane":
-            t = 0.35
-            lx = x1 + (x2 - x1) * t
-            ly = y1 + (y2 - y1) * t
+            # Center label at the true midpoint of the connector
+            lx = (x1 + x2) / 2.0
+            ly = (y1 + y2) / 2.0
 
             mid_key = f"{int(lx/30)},{int(ly/30)}"
             stagger = label_offset_counter.get(mid_key, 0)
             label_offset_counter[mid_key] = stagger + 1
 
-            dx = x2 - x1
-            dy = y2 - y1
-            length = math.hypot(dx, dy)
-            if length < 1e-6:
-                nx, ny = 0.0, -1.0
-            else:
-                nx, ny = -dy / length, dx / length
+            # Stagger multiple labels at the same midpoint by increasing vertical offset
+            # Increase spacing to reduce overlap and improve readability
+            base_vertical = 40.0
+            stagger_gap = 40.0
+            label_y = ly + base_vertical + stagger * stagger_gap
 
-            base_offset = 18.0
-            offset = base_offset + stagger * 20.0
-
-            font_size = 20
+            font_size = 30
             text_fill = stroke if edge.edge_type.startswith("rss_") else "#334155"
 
             edge_text_parts.append(
-                f'<text x="{lx + nx * offset:.1f}" y="{ly + ny * offset:.1f}" '
+                f'<text x="{lx:.1f}" y="{label_y:.1f}" '
                 f'font-size="{font_size}" font-weight="{"700" if edge.edge_type.startswith("rss_") else "400"}" '
                 f'fill="{text_fill}" stroke="#ffffff" stroke-width="2.5" paint-order="stroke" '
-                f'text-anchor="middle">{label}</text>'
+                f'text-anchor="middle" alignment-baseline="central">{label}</text>'
             )
         visible_edge_count += 1
 
@@ -299,7 +308,7 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
             # Speed label under the vehicle
             speed_str = f"{node.speed:.1f} m/s" if node.speed and node.speed > 0.01 else "stopped"
             circle_parts.append(
-                f'<text x="{x:.1f}" y="{y + 36:.1f}" font-size="14" fill="#64748b" text-anchor="middle">{speed_str}</text>'
+                f'<text x="{x:.1f}" y="{y + 44:.1f}" font-size="26" fill="#64748b" text-anchor="middle">{speed_str}</text>'
             )
         else:
             circle_parts.append(
@@ -307,40 +316,51 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
             )
 
         # Node label - offset above-left for vehicles, above for roads
-        label_text = f"{node.node_type}:{node_id}"
+        if node.node_type == "Vehicle":
+            label_text = display_id(node_id)
+        else:
+            label_text = f"{node.node_type}:{node_id}"
         circle_parts.append(
-            f'<text x="{x:.1f}" y="{y - 20:.1f}" font-size="16" fill="#1a1a1a" '
+            f'<text x="{x:.1f}" y="{y - 28:.1f}" font-size="30" fill="#1a1a1a" '
             f'text-anchor="middle" font-weight="500">{label_text}</text>'
         )
 
-    # RSS panel rows
-    rss_rows = ""
-    if rss_violations:
-        for v in rss_violations:
-            badge_color = "#dc2626" if v["type"] == "Longitudinal" else "#ea580c"
-            dist_info = ""
-            if "actual" in v and "safe" in v:
-                dist_info = f' <span style="font-size:11px;color:#64748b;">({v["actual"]}m / {v["safe"]}m safe)</span>'
-            rss_rows += (
-                f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
-                f'<span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;'
-                f'font-size:12px;font-weight:600;">{v["type"]}</span>'
-                f'<span style="font-size:13px;color:#1e293b;">{v["source"]} &rarr; {v["target"]}{dist_info}</span>'
-                f'</div>'
-            )
+    # Separate RSS panel rows by source
+    python_rows, viatra_rows = "", ""
+    python_checks = [v for v in rss_violations if v.get("check_source") == "python"]
+    python_violations = [v for v in python_checks if v.get("violation")]
+    if python_checks:
+        for v in python_checks:
+            is_violation = v.get("violation")
+            badge_color = ("#dc2626" if v["type"] == "Longitudinal" else "#ea580c") if is_violation else "#16a34a"
+            dist_info = f' <span style="font-size:15px;color:#64748b;">({v["actual"]}m / {v["safe"]}m safe)</span>' if "actual" in v and "safe" in v else ""
+            source_label = display_id(v["source"])
+            target_label = display_id(v["target"])
+            python_rows += f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;"><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-size:16px;font-weight:600;">{v["type"]}</span><span style="font-size:17px;color:#1e293b;">{source_label} &rarr; {target_label}{dist_info}</span></div>'
     else:
-        rss_rows = '<div style="color:#16a34a;font-size:14px;font-weight:600;">No RSS violations</div>'
+        python_rows = '<div style="color:#16a34a;font-size:18px;font-weight:600;">No violations</div>'
+    viatra_violations = [v for v in rss_violations if v.get("check_source") == "viatra"]
+    if viatra_violations:
+        for v in viatra_violations:
+            badge_color = "#dc2626" if v["type"] == "Longitudinal" else "#ea580c"
+            source_label = display_id(v["source"])
+            target_label = display_id(v["target"])
+            viatra_rows += f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;"><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-size:16px;font-weight:600;">{v["type"]}</span><span style="font-size:17px;color:#1e293b;">{source_label} &rarr; {target_label}</span></div>'
+    else:
+        viatra_rows = '<div style="color:#16a34a;font-size:18px;font-weight:600;">No violations</div>'
 
     vehicle_count = sum(1 for n in nodes if n.node_type == "Vehicle")
-    rss_lon_count = sum(1 for v in rss_violations if v["type"] == "Longitudinal")
-    rss_lat_count = sum(1 for v in rss_violations if v["type"] == "Lateral")
 
     html = f"""<!doctype html>
 <html>
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="refresh" content="0.1" />
+    <script>
+        setInterval(function() {{
+            location.reload();
+        }}, 150);
+    </script>
     <title>Scene Graph Live View</title>
     <style>
         html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; }}
@@ -350,30 +370,32 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
             display: flex; flex-direction: column; box-sizing: border-box;
         }}
         .head {{
-            padding: 12px 18px; border-bottom: 1px solid #e5e7eb;
+            padding: 8px 18px; border-bottom: 1px solid #e5e7eb;
             flex: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-start;
         }}
         .head-left {{ flex: 1; }}
-        .head-left strong {{ font-size: 22px; font-weight: 700; }}
-        .meta {{ color: #3f4b5b; font-size: 14px; margin-top: 4px; }}
+        .head-left strong {{ font-size: 26px; font-weight: 700; }}
+        .meta {{ color: #3f4b5b; font-size: 16px; margin-top: 4px; }}
+        .rss-panels {{ flex: 0 0 auto; display: flex; gap: 8px; margin-left: 16px; }}
         .rss-panel {{
-            flex: 0 0 auto; min-width: 280px; max-width: 400px;
-            background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
-            padding: 10px 14px; margin-left: 16px;
+            flex: 0 0 auto; min-width: 350px; max-width: 350px; height: 125px; overflow: auto;
+            background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;
+            padding: 10px 12px; display: flex; flex-direction: column;
         }}
+        .rss-panel.danger {{ background: #fef2f2; border: 1px solid #fecaca; }}
         .rss-panel.safe {{ background: #f0fdf4; border-color: #bbf7d0; }}
         .rss-title {{
-            font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 6px;
-            display: flex; align-items: center; gap: 6px;
+            font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 4px;
+            display: flex; align-items: center; gap: 4px;
         }}
-        .rss-count {{ font-size: 12px; color: #64748b; margin-bottom: 4px; }}
+        .rss-count {{ font-size: 14px; color: #64748b; margin-bottom: 3px; }}
         svg {{ display: block; width: 100%; flex: 1 1 auto; background: #fcfdff; }}
         .legend {{
             display: flex; gap: 16px; padding: 6px 18px; border-top: 1px solid #e5e7eb;
-            flex: 0 0 auto; font-size: 12px; color: #64748b; align-items: center;
+            flex: 0 0 auto; font-size: 18px; color: #64748b; align-items: center;
         }}
         .legend-item {{ display: flex; align-items: center; gap: 4px; }}
-        .legend-swatch {{ width: 20px; height: 3px; border-radius: 2px; }}
+        .legend-swatch {{ width: 22px; height: 4px; border-radius: 2px; }}
     </style>
 </head>
 <body>
@@ -381,14 +403,23 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
         <div class="head">
             <div class="head-left">
                 <strong>CARLA Scene Graph Live View</strong>
-                <div class="meta">Tick: {tick} | Vehicles: {vehicle_count} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count} | Auto-refresh: 100ms</div>
+                <div class="meta">Tick: {tick} | Vehicles: {vehicle_count} | Nodes: {len(visible_node_ids)} | Edges: {visible_edge_count}</div>
             </div>
-            <div class="rss-panel {'safe' if not rss_violations else ''}">
-                <div class="rss-title">
-                    {'&#x26A0;' if rss_violations else '&#x2705;'} RSS Safety Status
+            <div class="rss-panels">
+                <div class="rss-panel {'danger' if python_violations else 'safe'}">
+                    <div class="rss-title">
+                        {'&#x26A0;' if python_violations else '&#x2705;'} Ground Truth
+                    </div>
+                    <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Python</div>
+                    {python_rows}
                 </div>
-                <div class="rss-count">Longitudinal: {rss_lon_count} | Lateral: {rss_lat_count}</div>
-                {rss_rows}
+                <div class="rss-panel {'danger' if viatra_violations else 'safe'}">
+                    <div class="rss-title">
+                        {'&#x26A0;' if viatra_violations else '&#x2705;'} VIATRA
+                    </div>
+                    <div style="font-size:13px;color:#64748b;margin-bottom:2px;">Query Results</div>
+                    {viatra_rows}
+                </div>
             </div>
         </div>
         <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -399,9 +430,8 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
         <div class="legend">
             <div class="legend-item"><div class="legend-swatch" style="background:#dc2626;height:4px;"></div> RSS Longitudinal</div>
             <div class="legend-item"><div class="legend-swatch" style="background:#ea580c;height:4px;"></div> RSS Lateral</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#7c3aed;"></div> Following</div>
             <div class="legend-item"><div class="legend-swatch" style="background:#738497;"></div> Vehicle proximity</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#94a3b8;" ></div> Lane</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:none;border-top:4px dashed #94a3b8;height:0;"></div> Lane</div>
         </div>
     </div>
 </body>
@@ -413,40 +443,101 @@ def write_live_view_html(output_path: Path, nodes: List[Node], edges: List[Edge]
 
 
 def collect_nodes(mock: bool, host: str, port: int, timeout: float, tick: int) -> List[Node]:
+    """Collect vehicles and pedestrians only (every tick).
+    
+    Lanes are cached separately and will be combined in main().
+    """
     if mock:
         base = collect_mock_nodes()
+        # Return only vehicles and pedestrians from mock data
         return [
             Node(
                 node_type=node.node_type,
                 external_id=node.external_id,
                 x=node.x + math.cos(tick * 0.5 + idx),
                 y=node.y + math.sin(tick * 0.5 + idx),
-                z=node.z,
+                z=0.0,
                 heading=node.heading,
                 speed=node.speed,
-                length=node.length,
-                width=node.width,
             )
             for idx, node in enumerate(base)
+            if node.node_type != "RoadSegment"
         ]
 
     return collect_carla_nodes(host, port, timeout)
+
+
+def synthesize_lanes_from_ego(actors: List[Node]) -> List[Node]:
+    """Create center/left/right lane nodes anchored to the first vehicle (ego)."""
+    ego_node = next((n for n in actors if n.node_type == "Vehicle"), None)
+    if ego_node is None:
+        return []
+
+    heading = ego_node.heading
+    perp_x = -math.sin(heading)
+    perp_y = math.cos(heading)
+
+    lane_specs = [
+        ("lane_center", 0.0),
+            ("lane_left", LANE_WIDTH_M),
+            ("lane_right", -LANE_WIDTH_M),
+    ]
+
+    lanes: List[Node] = []
+    for lane_id, offset in lane_specs:
+        lanes.append(
+            Node(
+                node_type="RoadSegment",
+                external_id=lane_id,
+                x=ego_node.x + perp_x * offset,
+                y=ego_node.y + perp_y * offset,
+                z=0.0,
+                heading=heading,
+                length=LANE_LENGTH_M,
+                width=LANE_WIDTH_M,
+            )
+        )
+    return lanes
+
+
+def wait_for_viatra_completion(flag_dir: Path, expected_tick: int, timeout: float = 10.0) -> bool:
+    """Wait for VIATRA to complete the requested tick."""
+    done_flag = flag_dir / "viatra_done.seq"
+    start = time.time()
+
+    while time.time() - start < timeout:
+        if done_flag.exists():
+            try:
+                done_tick = int(done_flag.read_text(encoding="utf-8").strip())
+            except Exception:
+                done_tick = -1
+            if done_tick >= expected_tick:
+                return True
+    
+    return False
+
+
+def signal_ready_for_viatra(flag_dir: Path, tick: int) -> None:
+    """Signal to VIATRA that new data is ready to be processed."""
+    flag_dir.mkdir(parents=True, exist_ok=True)
+    ready_flag = flag_dir / "ready_for_viatra.seq"
+    ready_flag.write_text(str(tick), encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stream CARLA scene graphs to XMI + JSONL")
     parser.add_argument("--out-dir", default="data/stream", help="Output stream directory")
     parser.add_argument("--scene-name", default="CARLA_Stream", help="Scene name for XMI files")
-    parser.add_argument("--interval", type=float, default=0.1, help="Seconds between snapshots")
+    # Interval-based polling removed: stream emits snapshots as-produced
     parser.add_argument("--ticks", type=int, default=0, help="Number of ticks (0 = infinite)")
     parser.add_argument("--carla-address", default="127.0.0.1", help="CARLA host")
     parser.add_argument("--port", type=int, default=2000, help="CARLA RPC port")
-    parser.add_argument("--timeout", type=float, default=5.0, help="CARLA RPC timeout")
+    parser.add_argument("--timeout", type=float, default=60.0, help="CARLA RPC timeout")
     parser.add_argument("--mock", action="store_true", help="Run without CARLA using synthetic movement")
     return parser.parse_args()
 
 
-def read_xml_with_retry(path, retries=5, delay=0.05):
+def read_xml_with_retry(path, retries=5):
     for attempt in range(retries):
         try:
             with open(path, "rb") as f:
@@ -460,7 +551,6 @@ def read_xml_with_retry(path, retries=5, delay=0.05):
                     if attempt == retries - 1:
                         print(f"File is locked after {retries} attempts: {path}")
                         return None
-                    time.sleep(delay)
                     continue
 
                 try:
@@ -471,12 +561,11 @@ def read_xml_with_retry(path, retries=5, delay=0.05):
         except Exception:
             if attempt == retries - 1:
                 raise
-            time.sleep(delay)
 
     raise RuntimeError("Unexpected XML read retry state")
 
 
-def load_edges_from_snapshot(latest_path: Path) -> List[Edge]:
+def load_edges_from_snapshot(latest_path: Path) -> Optional[List[Edge]]:
     if not latest_path.exists():
         return []
 
@@ -484,7 +573,7 @@ def load_edges_from_snapshot(latest_path: Path) -> List[Edge]:
     try:
         tree = read_xml_with_retry(latest_path)
         if tree is None:
-            raise ET.ParseError("Latest snapshot is temporarily unavailable")
+            return None
 
         root = tree.getroot()
         for edge_elem in root.findall("edges"):
@@ -509,16 +598,14 @@ def load_edges_from_snapshot(latest_path: Path) -> List[Edge]:
                 )
             )
     except ET.ParseError:
-        return []
+        return None
 
     return edges
 
 
-def persist_event(event: Dict[str, object], events_path: Path, state_path: Path) -> None:
+def persist_event(event: Dict[str, object], events_path: Path) -> None:
     with events_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
-
-    state_path.write_text(json.dumps(event, indent=2), encoding="utf-8")
 
 
 def main() -> int:
@@ -527,24 +614,59 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     latest_path = out_dir / "latest_snapshot.xmi"
     events_path = out_dir / "events.jsonl"
-    state_path = out_dir / "current_state.json"
+    # `current_state.json` mirror removed; use `events.jsonl` and `latest_snapshot.xmi`
     view_path = out_dir / "live_view.html"
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    prev_nodes: Dict[str, Dict[str, object]] = {}
-    prev_edges: Set[Tuple[str, str, str, str, str]] = set()
+    # NOTE: lane nodes are generated dynamically each tick relative to the ego
+    # vehicle position instead of being collected from CARLA topology.
 
+    prev_nodes, prev_edges = {}, set()
+    last_known_edges: List[Edge] = []
     tick = 0
     while True:
         tick += 1
-        nodes = collect_nodes(args.mock, args.carla_address, args.port, args.timeout, tick)
+        
+        # Wait for VIATRA to complete processing previous frame (except on first tick)
+        if tick > 1:
+            if not wait_for_viatra_completion(out_dir, tick - 1, timeout=10.0):
+                print(f"WARNING: VIATRA did not complete in time at tick {tick}")
+        
+        actors = collect_nodes(args.mock, args.carla_address, args.port, args.timeout, tick)
+        
+        lanes = synthesize_lanes_from_ego(actors)
+
+        # Combine actors (vehicles/pedestrians) with synthesized lane nodes
+        nodes = actors + lanes
+
+        # Preserve existing edges while refreshing nodes to avoid wiping edge state.
+        existing_edges = load_edges_from_snapshot(latest_path)
+        if existing_edges is None:
+            edges_for_write = last_known_edges
+            print("WARNING: Could not read existing edges; reusing last known edges for snapshot write")
+        else:
+            edges_for_write = existing_edges
+
+        # Write only the rolling latest snapshot with current node state.
+        write_scene_xmi(args.scene_name, nodes, edges_for_write, latest_path)
+        
+        # Signal VIATRA that new data is ready
+        signal_ready_for_viatra(out_dir, tick)
+
+        viatra_ok = wait_for_viatra_completion(out_dir, tick, timeout=10.0)
+        if not viatra_ok:
+            print(f"WARNING: VIATRA did not complete in time for tick {tick}")
 
         edges = load_edges_from_snapshot(latest_path)
+        if edges is None:
+            edges = last_known_edges
+            print("WARNING: Could not read post-VIATRA edges; reusing last known edges")
+        else:
+            last_known_edges = edges
 
-        # Write only the rolling latest snapshot.
-        write_scene_xmi(args.scene_name, nodes, edges, latest_path)
-        write_live_view_html(view_path, nodes, edges, tick)
+        if viatra_ok:
+            write_live_view_html(view_path, nodes, edges, tick)
 
         node_diff = diff_nodes(prev_nodes, nodes)
         edge_diff = diff_edges(prev_edges, edges, nodes)
@@ -559,7 +681,7 @@ def main() -> int:
             "edge_changes": edge_diff,
         }
 
-        persist_event(event, events_path, state_path)
+        persist_event(event, events_path)
 
         prev_nodes = {node.external_id: normalize_node(node) for node in nodes}
         prev_edges = {k for edge in edges if (k := edge_key(edge, nodes)) is not None}
@@ -571,8 +693,6 @@ def main() -> int:
 
         if args.ticks > 0 and tick >= args.ticks:
             break
-
-        time.sleep(args.interval)
 
     return 0
 

@@ -1,6 +1,9 @@
 package apiqueries;
 
-import java.util.Collections;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -42,8 +45,6 @@ import queries.LeftRear;
 import queries.LeftFront;
 import queries.FrontLeft;
 import queries.VehicleOnLane;
-import queries.EgoFollowing;
-import queries.RemoveEgoFollowing;
 import queries.RssLongitudinalViolation;
 import queries.RemoveRssLongitudinalViolation;
 import queries.RssLateralViolation;
@@ -52,8 +53,13 @@ import queries.RemoveVehicleOnLane;
 
 public class QueryRunner implements IApplication {
 
-    private static fRyan\\Documents\\McMaster MASc\\2025-26\\Classes\\CAS782\\Final ProjectL_PATH =
-        "C:\\Users\\Ryan\\Documents\\McMaster MASc\\2025-26\\Classes\\CAS782\\Final Project\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
+    private static final String MODEL_PATH =
+            "C:\\Users\\marko\\Documents\\CAS782_Project_MB_RG\\data\\stream\\latest_snapshot.xmi";
+        private static final Path MODEL_FILE = Paths.get(MODEL_PATH);
+    private static final Path FLAG_DIR =
+            Paths.get("C:\\Users\\marko\\Documents\\CAS782_Project_MB_RG\\data\\stream");
+    private static final Path READY_FLAG = FLAG_DIR.resolve("ready_for_viatra.seq");
+    private static final Path DONE_FLAG = FLAG_DIR.resolve("viatra_done.seq");
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
@@ -187,19 +193,6 @@ public class QueryRunner implements IApplication {
             .name("RemoveVehicleOnLaneRule")
             .action(match -> removeLane(match.getVehicle(), match.getLane()))
             .build();
-Ego longitudinal following
-        BatchTransformationRule<EgoFollowing.Match, EgoFollowing.Matcher> egoFollowingRule =
-            ruleFactory.createRule(EgoFollowing.instance())
-            .name("EgoFollowingRule")
-            .action(match -> applyFollowing(match.getEgo(), match.getLead()))
-            .build();
-
-        // Remove stale following edge when EgoFollowing no longer holds
-        BatchTransformationRule<RemoveEgoFollowing.Match, RemoveEgoFollowing.Matcher> removeEgoFollowingRule =
-            ruleFactory.createRule(RemoveEgoFollowing.instance())
-            .name("RemoveEgoFollowingRule")
-            .action(match -> removeFollowing(match.getEgo(), match.getLead()))
-            .build();
 
         // RSS Longitudinal Violation
         BatchTransformationRule<RssLongitudinalViolation.Match, RssLongitudinalViolation.Matcher> rssLonRule =
@@ -231,8 +224,31 @@ Ego longitudinal following
 
         // 
         // Main loop
+        long lastProcessedTick = 0L;
         while (true) {
             long start = System.nanoTime();
+            long deadline = start + 10_000_000_000L;  // 10 seconds
+
+            // Wait for bridge to signal new data is ready
+            long readyTick = -1L;
+            boolean foundReady = false;
+            while (System.nanoTime() < deadline) {
+                if (Files.exists(READY_FLAG)) {
+                    try {
+                        readyTick = Long.parseLong(Files.readString(READY_FLAG).trim());
+                        if (readyTick > lastProcessedTick) {
+                            foundReady = true;
+                            break;
+                        }
+                    } catch (Exception e) {
+                        // ignore and keep waiting
+                    }
+                }
+            }
+            
+            if (!foundReady) {
+                System.out.println("WARNING: Timed out waiting for bridge to write new data");
+            }
 
             ResourceSet resourceSet = new ResourceSetImpl();
             resourceSet.getResourceFactoryRegistry()
@@ -256,14 +272,14 @@ Ego longitudinal following
 
             System.out.println("--- Executing Batch Transformation ---");
 
-            // Priority order
+            // Fire rules
             statements.fireAllCurrent(nearCollisionRule);
             statements.fireAllCurrent(superNearRule);
             statements.fireAllCurrent(veryNearRule);
             statements.fireAllCurrent(nearRule);
             statements.fireAllCurrent(visibleRule);
             statements.fireAllCurrent(removeRule);
-
+            
             // Spatial direction rules
             statements.fireAllCurrent(frontRightRule);
             statements.fireAllCurrent(rightFrontRule);
@@ -273,9 +289,8 @@ Ego longitudinal following
             statements.fireAllCurrent(leftRearRule);
             statements.fireAllCurrent(leftFrontRule);
             statements.fireAllCurrent(frontLeftRule);
+
             statements.fireAllCurrent(vehicleOnLaneRule);
-            statements.fireAllCurrent(egoFollowingRule);
-            statements.fireAllCurrent(removeEgoFollowingRule);
             statements.fireAllCurrent(rssLonRule);
             statements.fireAllCurrent(removeRssLonRule);
             statements.fireAllCurrent(rssLatRule);
@@ -283,6 +298,11 @@ Ego longitudinal following
             statements.fireAllCurrent(removeVehicleOnLaneRule);
 
             saveResource(resource);
+
+            // Signal that VIATRA has completed one round of evaluation
+            Files.writeString(DONE_FLAG, Long.toString(readyTick));
+
+            lastProcessedTick = readyTick;
 
             long end = System.nanoTime();
             System.out.println("VIATRA took: " + (end - start) / 1_000_000 + " ms");
@@ -310,16 +330,12 @@ Ego longitudinal following
             edge.setSpatial("");
             scene.getEdges().add(edge);
 
-            System.out.println("Created edge: " +
-                v1.getId() + " -> " + v2.getId());
+            System.out.println("Created edge: " + v1.getId() + " -> " + v2.getId());
         }
 
         if (!distance.equals(edge.getDistance())) {
             edge.setDistance(distance);
-
-            System.out.println("Updated distance: " +
-                v1.getId() + " -> " + v2.getId() +
-                " = " + distance);
+            System.out.println("Updated distance: " + v1.getId() + " -> " + v2.getId() + " = " + distance);
         }
     }
 
@@ -339,10 +355,7 @@ Ego longitudinal following
         if (edge != null) {
             if (!spatial.equals(edge.getSpatial())) {
                 edge.setSpatial(spatial);
-
-                System.out.println("Updated spatial: " +
-                    source.getId() + " -> " + target.getId() +
-                    " = " + spatial);
+                System.out.println("Updated spatial: " + source.getId() + " -> " + target.getId() + " = " + spatial);
             }
         }
     }
@@ -363,9 +376,7 @@ Ego longitudinal following
             edge.setTarget(lane);
             edge.setType("lane");
             scene.getEdges().add(edge);
-
-            System.out.println("Created lane edge: " +
-                vehicle.getId() + " -> " + lane.getId());
+            System.out.println("Created lane edge: " + vehicle.getId() + " -> " + lane.getId());
         }
     }
 
@@ -380,45 +391,7 @@ Ego longitudinal following
 
         toRemove.forEach(e -> {
             scene.getEdges().remove(e);
-            System.out.println("Removed lane edge: " +
-                vehicle.getId() + " -> " + lane.getId());
-        });
-    }
-void applyFollowing(Vehicle ego, Vehicle lead) {
-
-        Scene scene = (Scene) ego.eContainer();
-
-        Edge edge = scene.getEdges().stream()
-            .filter(e -> "following".equals(e.getType()))
-            .filter(e -> e.getSource() == ego && e.getTarget() == lead)
-            .findFirst()
-            .orElse(null);
-
-        if (edge == null) {
-            edge = SceneGraphModelFactory.eINSTANCE.createEdge();
-            edge.setSource(ego);
-            edge.setTarget(lead);
-            edge.setType("following");
-            scene.getEdges().add(edge);
-
-            System.out.println("[EgoFollowing] " + ego.getId() +
-                " is longitudinally following " + lead.getId());
-        }
-    }
-
-    private void removeFollowing(Vehicle ego, Vehicle lead) {
-
-        Scene scene = (Scene) ego.eContainer();
-
-        List<Edge> toRemove = scene.getEdges().stream()
-            .filter(e -> "following".equals(e.getType()))
-            .filter(e -> e.getSource() == ego && e.getTarget() == lead)
-            .toList();
-
-        toRemove.forEach(e -> {
-            scene.getEdges().remove(e);
-            System.out.println("[EgoFollowing] Removed following edge: " +
-                ego.getId() + " -> " + lead.getId());
+            System.out.println("Removed lane edge: " + vehicle.getId() + " -> " + lane.getId());
         });
     }
 
@@ -438,9 +411,7 @@ void applyFollowing(Vehicle ego, Vehicle lead) {
             edge.setTarget(other);
             edge.setType(edgeType);
             scene.getEdges().add(edge);
-
-            System.out.println("[RSS] " + edgeType + ": " +
-                ego.getId() + " -> " + other.getId());
+            System.out.println("[RSS] " + edgeType + ": " + ego.getId() + " -> " + other.getId());
         }
     }
 
@@ -451,29 +422,22 @@ void applyFollowing(Vehicle ego, Vehicle lead) {
         List<Edge> toRemove = scene.getEdges().stream()
             .filter(e -> edgeType.equals(e.getType()))
             .filter(e -> e.getSource() == ego && e.getTarget() == other)
-            .toList();
+            .collect(Collectors.toList());
 
         toRemove.forEach(e -> {
             scene.getEdges().remove(e);
-            System.out.println("[RSS] Removed " + edgeType + ": " +
-                ego.getId() + " -> " + other.getId());
+            System.out.println("[RSS] Removed " + edgeType + ": " + ego.getId() + " -> " + other.getId());
         });
     }
 
-    private 
     private Resource loadResource(ResourceSet rs) {
         int maxAttempts = 40;
 
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             try {
-                return rs.getResource(
-                    URI.createFileURI(MODEL_PATH), true);
-            } catch (Exception e) {}
-
-            try { Thread.sleep(10); }
-            catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return null;
+                return rs.getResource(URI.createFileURI(MODEL_PATH), true);
+            } catch (Exception e) {
+                // ignore and retry
             }
         }
         return null;
@@ -484,19 +448,78 @@ void applyFollowing(Vehicle ego, Vehicle lead) {
 
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             try {
-                resource.save(Collections.emptyMap());
-                System.out.println("Model updated and saved.");
+                // Persist only edges to preserve original node ordering and other attributes
+                saveEdgesOnly(resource);
+                System.out.println("Model edges updated and saved.");
                 return;
-            } catch (Exception e) {}
-
-            try { Thread.sleep(10); }
-            catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return;
+            } catch (Exception e) {
+                // ignore and retry
             }
         }
 
         System.err.println("ERROR: Failed to save resource.");
+    }
+
+    /**
+     * Writes only the serialized <edges .../> elements back into the XMI file
+     * at MODEL_PATH. This preserves the original node ordering and other
+     * attributes while updating edges produced by VIATRA rules.
+     */
+    private void saveEdgesOnly(Resource resource) {
+        try {
+            if (resource.getContents().isEmpty()) return;
+
+            Object root = resource.getContents().get(0);
+            if (!(root instanceof scenegraph.Scene)) return;
+
+            scenegraph.Scene scene = (scenegraph.Scene) root;
+
+            // Build edges XML fragment
+            StringBuilder edgesXml = new StringBuilder();
+            for (scenegraph.Edge e : scene.getEdges()) {
+                int srcIdx = scene.getNodes().indexOf(e.getSource());
+                int tgtIdx = scene.getNodes().indexOf(e.getTarget());
+                String type = e.getType() == null ? "" : escapeXml(e.getType());
+                String distance = e.getDistance() == null ? "" : escapeXml(e.getDistance());
+                String spatial = e.getSpatial() == null ? "" : escapeXml(e.getSpatial());
+
+                edgesXml.append("  <edges ");
+                edgesXml.append("type=\"").append(type).append("\" ");
+                edgesXml.append("distance=\"").append(distance).append("\" ");
+                edgesXml.append("spatial=\"").append(spatial).append("\" ");
+                edgesXml.append("source=\"//@nodes.").append(srcIdx).append("\" ");
+                edgesXml.append("target=\"//@nodes.").append(tgtIdx).append("\" />\n");
+            }
+
+            // Read existing file content
+            String content = Files.readString(MODEL_FILE, StandardCharsets.UTF_8);
+
+            // Find where edges start and replace until the closing scene tag
+            int firstEdges = content.indexOf("\n  <edges");
+            int closeTag = content.lastIndexOf("</scenegraph:Scene>");
+
+            String newContent;
+            if (firstEdges != -1 && closeTag != -1) {
+                newContent = content.substring(0, firstEdges + 1) + edgesXml.toString() + content.substring(closeTag);
+            } else if (closeTag != -1) {
+                // No edges previously present: insert before closing tag
+                String prefix = content.substring(0, closeTag);
+                newContent = prefix + "\n" + edgesXml.toString() + content.substring(closeTag);
+            } else {
+                // Fallback: overwrite entire content
+                newContent = content + "\n" + edgesXml.toString();
+            }
+
+            Files.writeString(MODEL_FILE, newContent, StandardCharsets.UTF_8);
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Failed to write edges-only XMI", ex);
+        }
+    }
+
+    private String escapeXml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&apos;");
     }
 
     @Override

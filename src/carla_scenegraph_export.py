@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-import time
 import portalocker
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -37,8 +36,8 @@ class Node:
     external_id: str
     x: float
     y: float
-    z: float
     heading: float
+    z: float = 0.0
     speed: Optional[float] = None
     length: Optional[float] = None
     width: Optional[float] = None
@@ -55,32 +54,18 @@ class Edge:
     target_index: int
 
 
-def _waypoint_segment_length(start_waypoint, end_waypoint) -> float:
-    """Estimate lane segment length for a topology edge in meters."""
-    try:
-        # CARLA waypoint.s is longitudinal arc-length along the road reference line.
-        seg = abs(float(end_waypoint.s) - float(start_waypoint.s))
-        if seg > 0.0:
-            return seg
-    except Exception:
-        pass
-
-    # Fallback for unusual topology entries where s is unavailable/degenerate.
-    return float(start_waypoint.transform.location.distance(end_waypoint.transform.location))
-
-
 def collect_mock_nodes() -> List[Node]:
     return [
-        Node("Vehicle", "veh-ego", 0.0, 0.0, 0.0, 0.0, speed=8.0),
-        Node("Vehicle", "veh-1", 10.0, 0.0, 0.0, 1.57, speed=12.5),
-        Node("Pedestrian", "ped-1", 11.0, 1.0, 0.0, 0.785),
-        Node("RoadSegment", "lane-1", 0.0, -2.0, 0.0, 0.0, length=40.0, width=3.5),
-        Node("RoadSegment", "lane-2", 0.0, 2.0, 0.0, 0.0, length=40.0, width=3.5),
-        Node("RoadSegment", "lane-3", 10.0, -2.0, 0.0, 1.57, length=30.0, width=3.5),
+        Node("Vehicle", "veh-ego", 0.0, 0.0, heading=0.0, speed=8.0),
+        Node("Vehicle", "veh-1", 10.0, 0.0, heading=1.57, speed=12.5),
+        Node("Pedestrian", "ped-1", 11.0, 1.0, heading=0.785),
+        Node("RoadSegment", "lane-1", 0.0, -2.0, heading=0.0, length=40.0, width=3.5),
+        Node("RoadSegment", "lane-2", 0.0, 2.0, heading=0.0, length=40.0, width=3.5),
+        Node("RoadSegment", "lane-3", 10.0, -2.0, heading=1.57, length=30.0, width=3.5),
     ]
 
 
-def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
+def _get_carla_world(host: str, port: int, timeout: float):
     try:
         import carla  # type: ignore
     except Exception as exc:
@@ -90,11 +75,19 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
 
     client = carla.Client(host, port)
     client.set_timeout(timeout)
-    world = client.get_world()
+    return client.get_world()
+
+
+def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
+    """Collect vehicles and pedestrians from CARLA world (every tick).
+    
+    Lanes are not collected by this function; it returns only actors (vehicles and pedestrians).
+    """
+    world = _get_carla_world(host, port, timeout)
 
     nodes: List[Node] = []
     
-    # Collect vehicles and pedestrians
+    # Collect vehicles and pedestrians only
     for actor in world.get_actors():
         actor_type = actor.type_id
         transform = actor.get_transform()
@@ -111,10 +104,19 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
         else:
             continue
 
+        # Map ego/lead vehicles to synthetic IDs 147/148 for display purposes
+        role = actor.attributes.get('role_name', '')
+        if role == 'ego':
+            external_id = "147"
+        elif role == 'lead':
+            external_id = "148"
+        else:
+            external_id = str(actor.id)
+
         nodes.append(
             Node(
                 node_type=node_type,
-                external_id=str(actor.id),
+                external_id=external_id,
                 x=transform.location.x,
                 y=transform.location.y,
                 z=transform.location.z,
@@ -124,133 +126,17 @@ def collect_carla_nodes(host: str, port: int, timeout: float) -> List[Node]:
                 vy=node_vy,
             )
         )
-    
-    # Collect lanes as road segments
-    try:
-        carla_map = world.get_map()
-        topology = carla_map.get_topology()
-
-        # Track lane geometry from topology segments.
-        lane_metrics = {}
-        for start_waypoint, end_waypoint in topology:
-            # Restrict to strict driving lanes
-            if start_waypoint.lane_type != carla.LaneType.Driving:
-                continue
-
-            lane_id = start_waypoint.lane_id
-            road_id = start_waypoint.road_id
-            lane_key = (road_id, lane_id)
-
-            start_loc = start_waypoint.transform.location
-            end_loc = end_waypoint.transform.location
-            s_start = float(start_waypoint.s)
-            s_end = float(end_waypoint.s)
-            segment_length = _waypoint_segment_length(start_waypoint, end_waypoint)
-            if segment_length <= 0.0:
-                continue
-
-            # CARLA topology may contain repeated entries; use a rounded geometric key to de-duplicate.
-            segment_key = (
-                start_waypoint.road_id,
-                start_waypoint.lane_id,
-                start_waypoint.section_id,
-                round(s_start, 3),
-                round(s_end, 3),
-                round(start_loc.x, 2),
-                round(start_loc.y, 2),
-                round(end_loc.x, 2),
-                round(end_loc.y, 2),
-            )
-
-            if lane_key not in lane_metrics:
-                lane_metrics[lane_key] = {
-                    "waypoint": start_waypoint,
-                    "width": float(start_waypoint.lane_width),
-                    "length_sum": 0.0,
-                    "segments_seen": set(),
-                    "center_x_sum": 0.0,
-                    "center_y_sum": 0.0,
-                    "center_z_sum": 0.0,
-                    "dir_x_sum": 0.0,
-                    "dir_y_sum": 0.0,
-                    "sample_points": [],
-                }
-
-            metrics = lane_metrics[lane_key]
-            if segment_key in metrics["segments_seen"]:
-                continue
-
-            metrics["segments_seen"].add(segment_key)
-            metrics["length_sum"] += segment_length
-            metrics["center_x_sum"] += (start_loc.x + end_loc.x) * 0.5 * segment_length
-            metrics["center_y_sum"] += (start_loc.y + end_loc.y) * 0.5 * segment_length
-            metrics["center_z_sum"] += (start_loc.z + end_loc.z) * 0.5 * segment_length
-            metrics["dir_x_sum"] += (end_loc.x - start_loc.x) * segment_length
-            metrics["dir_y_sum"] += (end_loc.y - start_loc.y) * segment_length
-            metrics["sample_points"].append((start_loc.x, start_loc.y, start_loc.z))
-            metrics["sample_points"].append((end_loc.x, end_loc.y, end_loc.z))
-            metrics["width"] = max(metrics["width"], float(start_waypoint.lane_width))
-
-        # Create RoadSegment nodes for each unique lane
-        for (road_id, lane_id), metrics in lane_metrics.items():
-            waypoint = metrics["waypoint"]
-            accumulated_length = float(metrics["length_sum"])
-            if accumulated_length < 0.1:  # Skip degenerate lanes
-                continue
-
-            center_x = metrics["center_x_sum"] / accumulated_length
-            center_y = metrics["center_y_sum"] / accumulated_length
-            center_z = metrics["center_z_sum"] / accumulated_length
-            if abs(metrics["dir_x_sum"]) > 1e-4 or abs(metrics["dir_y_sum"]) > 1e-4:
-                heading_rad = math.atan2(metrics["dir_y_sum"], metrics["dir_x_sum"])
-            else:
-                heading_rad = math.radians(waypoint.transform.rotation.yaw)
-
-            # For a straight rectangular lane model, use axis-projected extent rather than arc length.
-            axis_x = math.cos(heading_rad)
-            axis_y = math.sin(heading_rad)
-            projections = [
-                (px - center_x) * axis_x + (py - center_y) * axis_y
-                for px, py, _pz in metrics["sample_points"]
-            ]
-
-            if projections:
-                lane_length = max(projections) - min(projections)
-            else:
-                lane_length = accumulated_length
-
-            if lane_length < 0.1:
-                lane_length = accumulated_length
-
-            external_id = f"lane_{road_id}_{lane_id}"
-            nodes.append(
-                Node(
-                    node_type="RoadSegment",
-                    external_id=external_id,
-                    x=float(center_x),
-                    y=float(center_y),
-                    z=float(center_z),
-                    heading=float(heading_rad),
-                    length=lane_length,
-                    width=float(metrics["width"]),
-                )
-            )
-    except Exception as e:
-        print(f"Warning: Could not collect lane data: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
 
     return nodes
 
 
-def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
+def write_xmi_with_retry(tree, path, retries=5):
     """
     Writes an XML/XMI file with retry logic if the file is locked.
 
     :param tree: ElementTree to write
     :param path: Output file path
     :param retries: Number of retry attempts
-    :param delay: Delay between retries in seconds
     :return: True if successful, False otherwise
     """
     for attempt in range(retries):
@@ -263,7 +149,6 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
                     if attempt == retries - 1:
                         print(f"File is locked after {retries} attempts: {path}")
                         return False
-                    time.sleep(delay)
                     continue
 
                 try:
@@ -276,7 +161,8 @@ def write_xmi_with_retry(tree, path, retries=5, delay=0.05):
         except Exception:
             if attempt == retries - 1:
                 raise
-            time.sleep(delay)
+            # immediate retry without sleeping to minimize latency on contention
+            continue
 
     return False
 
@@ -347,7 +233,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scene-name", default="CARLA_Snapshot", help="Scene name")
     parser.add_argument("--host", default="127.0.0.1", help="CARLA host")
     parser.add_argument("--port", type=int, default=2000, help="CARLA RPC port")
-    parser.add_argument("--timeout", type=float, default=5.0, help="CARLA client timeout seconds")
+    parser.add_argument("--timeout", type=float, default=60.0, help="CARLA client timeout seconds")
     parser.add_argument(
         "--mock",
         action="store_true",
@@ -360,9 +246,11 @@ def main() -> int:
     args = parse_args()
 
     if args.mock:
+        # Mock mode: use mock nodes for testing
         nodes = collect_mock_nodes()
     else:
         try:
+            # In real mode: collect actors (vehicles + pedestrians) only; lanes are cached separately
             nodes = collect_carla_nodes(args.host, args.port, args.timeout)
         except Exception as exc:
             print(f"ERROR: {exc}", file=sys.stderr)

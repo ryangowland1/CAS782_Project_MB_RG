@@ -78,6 +78,69 @@ public class scenegraphhelper {
         return Math.max(0.0, d);
     }
 
+    // Proximity bucket minima (metres)
+    private static final double NEAR_COLLISION_MIN_DISTANCE = 0.0;
+    private static final double SUPER_NEAR_MIN_DISTANCE = 4.0;
+    private static final double VERY_NEAR_MIN_DISTANCE = 7.0;
+    private static final double NEAR_MIN_DISTANCE = 10.0;
+    private static final double VISIBLE_MIN_DISTANCE = 16.0;
+
+    /**
+     * Return the minimum distance implied by a vehicle-distance edge label.
+     *
+     * @param distance the edge distance bucket (for example, Visible)
+     * @return the minimum distance in metres, or NaN if the bucket is unknown
+     */
+    public static double edgeMinimumDistance(String distance) {
+        if (distance == null) return Double.NaN;
+
+        switch (distance) {
+            case "NearCollision":
+                return NEAR_COLLISION_MIN_DISTANCE;
+            case "SuperNear":
+                return SUPER_NEAR_MIN_DISTANCE;
+            case "VeryNear":
+                return VERY_NEAR_MIN_DISTANCE;
+            case "Near":
+                return NEAR_MIN_DISTANCE;
+            case "Visible":
+                return VISIBLE_MIN_DISTANCE;
+            default:
+                return Double.NaN;
+        }
+    }
+
+    /**
+     * Check whether an ego-following pair violates RSS longitudinal safety
+     * based on the minimum distance encoded on their vehicle-distance edge.
+     *
+     * @param distance vehicle-distance bucket label
+     * @param egoHeading ego heading (radians)
+     * @param egoVx ego world-frame X velocity
+     * @param egoVy ego world-frame Y velocity
+     * @param otherVx other world-frame X velocity
+     * @param otherVy other world-frame Y velocity
+     * @return true when the edge minimum distance is below the RSS safe distance
+     */
+    public static boolean rssLongitudinalViolationFromDistanceEdge(
+            String distance,
+            double egoHeading,
+            double egoVx, double egoVy,
+            double otherVx, double otherVy) {
+
+        double edgeMinDistance = edgeMinimumDistance(distance);
+        if (Double.isNaN(edgeMinDistance)) return false;
+
+        double[] egoFrame = decomposeVelocity(egoHeading, egoVx, egoVy);
+        double[] otherFrame = decomposeVelocity(egoHeading, otherVx, otherVy);
+
+        double dSafe = rssLongitudinalSafeDistance(
+            Math.max(egoFrame[0], 0.0),
+            Math.max(otherFrame[0], 0.0));
+
+        return edgeMinDistance < dSafe;
+    }
+
     /**
      * RSS minimum safe lateral distance (Equation 3).
      *

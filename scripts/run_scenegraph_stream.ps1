@@ -1,7 +1,6 @@
 param(
     [switch]$Mock,
     [int]$Ticks = 0,
-    [double]$Interval = 0.1,
     [string]$CarlaAddress = "127.0.0.1",
     [int]$Port = 2000,
     [string]$OutDir = ".\data\stream"
@@ -23,7 +22,6 @@ $script = [System.IO.Path]::GetFullPath($script)
 $argsList = @(
     $script,
     "--out-dir", $OutDir,
-    "--interval", "$Interval",
     "--ticks", "$Ticks",
     "--carla-address", $CarlaAddress,
     "--port", "$Port"

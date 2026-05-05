@@ -6,68 +6,7 @@
 - [x] SETUP.ps1 has been run successfully
 - [x] CARLA 0.9.16 downloaded by setup
 
-### Recommended First Steps for New Users
-
-**Option 1:** Start with live CARLA simulation (installed during setup)
-**Option 2:** Use mock mode for quick testing without starting the CARLA server
-
-## Part 1: CARLA Scene Graph Export
-
-### Option A: Mock Mode (Quick Testing)
-
-```powershell
-# Generate a test scene graph
-.\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --mock --output .\data\scene_mock.xmi
-```
-
-**Result:** Creates `data/scene_mock.xmi` with 3 nodes (2 vehicles, 1 pedestrian).
-
-### Option B: Live CARLA
-
-#### Step 1: Start CARLA Server
-
-Open a **new terminal** and run from the project root:
-
-```powershell
-.\CARLA_0.9.16\CarlaUE4.exe -quality-level=Low -windowed -dx11
-```
-
-Wait for CARLA window to fully load (you'll see the main menu or simulation view).
-
-#### Step 2: Export Scene Graph from Live CARLA
-
-```powershell
-.\.venv\Scripts\python.exe .\src\carla_scenegraph_export.py --output .\data\scene_live.xmi
-```
-
-**Result:** Creates `data/scene_live.xmi` with actors from the live CARLA world.
-
-### Option C: Continuous Streaming
-
-Start a scenario. There are other scenario options in the src folder.
-
-```powershell
-.\.venv\Scripts\python.exe .\src\scenario_ego_follow.py
-```
-
-Start the streaming bridge (updates `latest_snapshot.xmi` every second):
-
-```powershell
-# Mock mode (no CARLA needed)
-powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Mock -Interval 0.2
-
-# Live CARLA mode (requires server running)
-powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Interval 0.2
-```
-
-View live updates:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
-```
-
-Opens `data/stream/live_view.html` in your browser showing real-time graph updates.
-
-## Part 2: VIATRA Query Analysis
+## Part 1: VIATRA Query Analysis
 
 ### Setup Dependencies
 
@@ -135,6 +74,54 @@ Opens `data/stream/live_view.html` in your browser showing real-time graph updat
    - Program to Run → Run an application → SceneGraphAPIQueries.queryrunner
    - Click `Run`
    - Note that building the application took slightly over 2 minutes for me. Not sure why. Running the VIATRA queries takes around 50 ms
+
+## Part 2: CARLA Scene Graph Export
+
+### Step 1: Start CARLA Server
+
+Open a **new terminal** and run from the project root:
+
+```powershell
+.\CARLAUE4\CarlaUE4.exe -quality-level=Low -windowed -dx11
+```
+
+Wait for the CARLA window to fully load.
+
+### Step 2: Start a live scenario
+
+Run:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\scenario_ego_follow.py
+```
+
+This loads Town04 via the Python API and spawns ego + lead vehicles.
+
+### Step 3: Start the streaming bridge
+
+Open a **new terminal** from the project root and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1
+```
+
+For mock mode only (no CARLA server required):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_scenegraph_stream.ps1 -Mock
+```
+
+This writes `data/stream/latest_snapshot.xmi`, `data/stream/events.jsonl`, and `data/stream/live_view.html`.
+
+### Step 4: Open the live view
+
+Open a **new terminal** from the project root and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\open_live_view.ps1
+```
+
+Opens `data/stream/live_view.html` in your browser and refreshes automatically.
 
 ## Verification Checklist
 
